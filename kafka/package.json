@@ -1,0 +1,21 @@
+{
+  "name": "kafka-monitoring-distribuido",
+  "version": "1.0.0",
+  "description": "Producers y consumers Kafka para monitoreo distribuido de logs y métricas de servidores",
+  "type": "commonjs",
+  "scripts": {
+    "producer:recursos": "node producers/producer_recursos.js",
+    "producer:http": "node producers/producer_http.js",
+    "producer:errores": "node producers/producer_errores.js",
+    "producer:red": "node producers/producer_red.js",
+    "producer:seguridad": "node producers/producer_seguridad.js",
+    "consumer:json": "node consumers/consumer_json.js",
+    "consumer:csv": "node consumers/consumer_csv.js",
+    "consumer:sql": "node consumers/consumer_sql.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "kafkajs": "^2.2.4",
+    "mysql2": "^3.11.5"
+  }
+}

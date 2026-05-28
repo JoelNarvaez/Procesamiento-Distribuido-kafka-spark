@@ -1,0 +1,133 @@
+# =========================
+# Node.js / Kafka
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+
+# Variables de entorno
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+kafka/.env
+
+# =========================
+# Datos generados por consumers
+# =========================
+data/raw/*.json
+data/raw/*.csv
+data/raw/*.sql
+data/processed/
+data/tmp/
+data/temp/
+
+# Mantener carpetas vacías si se necesita
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# =========================
+# Salidas de Spark
+# =========================
+spark/output/
+spark/checkpoints/
+spark/warehouse/
+spark/metastore_db/
+spark/spark-warehouse/
+
+# Archivos temporales de Spark
+*.crc
+_SUCCESS
+_committed_*
+_started_*
+
+# =========================
+# Base de datos / SQL generado
+# =========================
+database/inserts.sql
+database/*_generated.sql
+database/*.dump
+database/*.backup
+database/*.bak
+
+# No ignorar el esquema principal
+!database/schema.sql
+
+# =========================
+# Docker / volúmenes locales
+# =========================
+docker/**/volumes/
+docker/**/data/
+docker/**/logs/
+*.pid
+
+# =========================
+# Python / PySpark
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =========================
+# Logs generales
+# =========================
+logs/
+*.log
+*.out
+*.err
+
+# =========================
+# Sistema operativo
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# VS Code / IDE
+# =========================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Archivos comprimidos / temporales
+# =========================
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+*.tmp
+*.temp
+
+# =========================
+# Evidencias pesadas
+# =========================
+docs/evidencias/
+docs/capturas/
+docs/videos/
+
+# =========================
+# Archivos de pruebas grandes
+# =========================
+*.parquet
+*.orc
+*.avro
