@@ -1,0 +1,65 @@
+services:
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka-nodo1
+    hostname: kafka-nodo1
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://192.168.10.101:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@192.168.10.101:9093,2@192.168.10.102:9093,3@192.168.10.103:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  spark-master:
+    image: apache/spark:latest
+    container_name: spark-master-cluster
+    hostname: spark-master
+    user: root
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.master.Master
+      --host 0.0.0.0
+      --port 7077
+      --webui-port 8080
+    volumes:
+      - ../../../data:/opt/spark/data
+      - ../../../spark/jobs:/opt/spark/jobs
+      - ../../../spark/output:/opt/spark/output
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-cluster
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: monitoreo_servidores
+      MYSQL_USER: usuario
+      MYSQL_PASSWORD: usuario123
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../../../database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+
+volumes:
+  kafka_data:
+  mysql_data:

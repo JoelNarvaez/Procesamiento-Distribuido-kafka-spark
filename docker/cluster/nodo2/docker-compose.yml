@@ -1,0 +1,48 @@
+services:
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka-nodo2
+    hostname: kafka-nodo2
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://192.168.10.102:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@192.168.10.101:9093,2@192.168.10.102:9093,3@192.168.10.103:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  spark-worker:
+    image: apache/spark:latest
+    container_name: spark-worker-1-cluster
+    hostname: spark-worker-1
+    user: root
+    ports:
+      - "8081:8081"
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.worker.Worker
+      spark://192.168.10.101:7077
+      --webui-port 8081
+    volumes:
+      - ../../../data:/opt/spark/data
+      - ../../../spark/jobs:/opt/spark/jobs
+      - ../../../spark/output:/opt/spark/output
+
+volumes:
+  kafka_data:
