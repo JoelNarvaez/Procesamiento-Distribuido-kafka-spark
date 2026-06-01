@@ -391,7 +391,7 @@ function generarEvento(tipoEvento) {
 
     endpoint: http.endpoint,
     metodo_http: http.metodo_http,
-    usuario: faker.internet.userName(),
+    usuario: faker.internet.username(),
     correo_usuario: faker.internet.email(),
     ciudad: randomItem(CIUDADES),
     ip_origen: http.ip_origen,
