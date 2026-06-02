@@ -15,7 +15,7 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
 
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@192.168.10.101:9093,2@192.168.10.102:9093,3@192.168.10.103:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@192.168.1.65:9093,2@192.168.10.102:9093,3@192.168.10.103:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
 
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
@@ -37,7 +37,7 @@ services:
     command: >
       /opt/spark/bin/spark-class
       org.apache.spark.deploy.worker.Worker
-      spark://192.168.10.101:7077
+      spark://192.168.1.65:7077
       --webui-port 8081
     volumes:
       - ../../../data:/opt/spark/data
