@@ -14,7 +14,7 @@
     "consumer:sql": "node consumers/consumer_sql.js"
   },
   "dependencies": {
-    "@faker-js/faker": "^9.0.0",
+    "@faker-js/faker": "^10.4.0",
     "dotenv": "^16.4.7",
     "kafkajs": "^2.2.4",
     "mysql2": "^3.11.5"
