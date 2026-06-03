@@ -1,7 +1,8 @@
-const { faker } = require("@faker-js/faker");
+//const { faker } = require("@faker-js/faker");
+const { faker } = require("@faker-js/faker/locale/es_MX");
 const crypto = require("crypto");
 
-faker.locale = "es_MX";
+//faker.locale = "es_MX";
 
 const SERVIDORES = [
   {
