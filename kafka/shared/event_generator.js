@@ -7,35 +7,35 @@ const crypto = require("crypto");
 const SERVIDORES = [
   {
     nombre: "server-01",
-    ip: "192.168.10.101",
+    ip: "192.168.1.65",
     zona: "rack-a",
     sistema_operativo: "Ubuntu Server 24.04",
     ambiente: "produccion"
   },
   {
     nombre: "server-02",
-    ip: "192.168.10.102",
+    ip: "192.168.1.66",
     zona: "rack-a",
     sistema_operativo: "Ubuntu Server 22.04",
     ambiente: "produccion"
   },
   {
     nombre: "server-03",
-    ip: "192.168.10.103",
+    ip: "192.168.1.67",
     zona: "rack-b",
     sistema_operativo: "Debian 12",
     ambiente: "produccion"
   },
   {
     nombre: "server-04",
-    ip: "192.168.10.104",
+    ip: "192.168.1.68",
     zona: "rack-b",
     sistema_operativo: "Rocky Linux 9",
     ambiente: "pruebas"
   },
   {
     nombre: "server-05",
-    ip: "192.168.10.105",
+    ip: "192.168.1.69",
     zona: "rack-c",
     sistema_operativo: "Ubuntu Server 24.04",
     ambiente: "desarrollo"
