@@ -134,6 +134,9 @@ async function runConsumerCsv() {
 
           if (totalEscritos % LOG_EVERY === 0) {
             console.log(`[${timestamp()}] [CSV] Escritos: ${totalEscritos} | Tópico actual: ${topic}`);
+
+            console.log("Último evento recibido:");
+            console.log(JSON.stringify(evento, null, 2));
           }
         } catch (parseError) {
           console.error(`[${timestamp()}] Error al parsear mensaje (offset ${message.offset}):`, parseError.message);

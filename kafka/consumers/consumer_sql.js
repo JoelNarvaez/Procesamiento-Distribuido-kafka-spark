@@ -407,6 +407,9 @@ async function runConsumerSql() {
 
           if (totalInsertados % LOG_EVERY === 0 && totalInsertados > 0) {
             console.log(`[${timestamp()}] [SQL] Insertados: ${totalInsertados} | Tópico: ${topic}`);
+
+            console.log("Último evento recibido:");
+            console.log(JSON.stringify(evento, null, 2));
           }
         } catch (err) {
           console.error(`[${timestamp()}] Error al procesar mensaje (offset ${message.offset}):`, err.message);
