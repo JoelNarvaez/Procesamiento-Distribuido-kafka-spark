@@ -25,7 +25,8 @@ async function runProducer({ clientId, topic, tipoEvento }) {
     console.log(` Total de mensajes: ${TOTAL_MESSAGES}`);
     console.log("=========================================");
 
-    for (let i = 1; i <= TOTAL_MESSAGES; i++) {
+    // for (let i = 1; i <= TOTAL_MESSAGES; i++) {
+    while(true) {
       const evento = generarEvento(tipoEvento);
 
       await producer.send({
