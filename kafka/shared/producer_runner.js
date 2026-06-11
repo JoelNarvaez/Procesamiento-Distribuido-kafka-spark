@@ -2,7 +2,6 @@ const { createKafkaClient } = require("./kafka_client");
 const { generarEvento } = require("./event_generator");
 require("dotenv").config();
 
-const TOTAL_MESSAGES = Number(process.env.TOTAL_MESSAGES || 1000);
 const PRODUCER_DELAY_MS = Number(process.env.PRODUCER_DELAY_MS || 10);
 
 function delay(ms) {
@@ -14,6 +13,17 @@ async function runProducer({ clientId, topic, tipoEvento }) {
   const producer = kafka.producer();
 
   let mensajesEnviados = 0;
+  let activo = true;
+
+  process.on("SIGINT", () => {
+    console.log(`\nDeteniendo producer: ${clientId}`);
+    activo = false;
+  });
+
+  process.on("SIGTERM", () => {
+    console.log(`\nDeteniendo producer: ${clientId}`);
+    activo = false;
+  });
 
   try {
     await producer.connect();
@@ -22,11 +32,10 @@ async function runProducer({ clientId, topic, tipoEvento }) {
     console.log(` Producer iniciado: ${clientId}`);
     console.log(` Tópico destino: ${topic}`);
     console.log(` Tipo de evento: ${tipoEvento}`);
-    console.log(` Total de mensajes: ${TOTAL_MESSAGES}`);
+    console.log(" Modo: generación continua");
     console.log("=========================================");
 
-    // for (let i = 1; i <= TOTAL_MESSAGES; i++) {
-    while(true) {
+    while (activo) {
       const evento = generarEvento(tipoEvento);
 
       await producer.send({
@@ -41,8 +50,8 @@ async function runProducer({ clientId, topic, tipoEvento }) {
 
       mensajesEnviados++;
 
-      if (i % 1000 === 0 || i === TOTAL_MESSAGES) {
-        console.log(`Mensajes enviados por ${clientId}: ${i}/${TOTAL_MESSAGES}`);
+      if (mensajesEnviados % 1000 === 0) {
+        console.log(`Mensajes enviados por ${clientId}: ${mensajesEnviados}`);
       }
 
       if (PRODUCER_DELAY_MS > 0) {

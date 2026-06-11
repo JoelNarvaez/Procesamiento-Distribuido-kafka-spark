@@ -29,22 +29,17 @@ services:
 
   spark-master:
     image: apache/spark:latest
-    container_name: spark-master-cluster
+    container_name: spark-master
     hostname: spark-master
-    user: root
     ports:
       - "7077:7077"
       - "8080:8080"
     command: >
       /opt/spark/bin/spark-class
       org.apache.spark.deploy.master.Master
-      --host 192.168.1.65
+      --host 0.0.0.0
       --port 7077
       --webui-port 8080
-    volumes:
-      - ../../../data:/opt/spark/data
-      - ../../../spark/jobs:/opt/spark/jobs
-      - ../../../spark/output:/opt/spark/output
 
   mysql:
     image: mysql:8.0
