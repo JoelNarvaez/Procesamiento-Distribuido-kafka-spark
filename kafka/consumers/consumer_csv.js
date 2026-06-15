@@ -2,16 +2,14 @@
  * consumer_csv.js
  * Consume los 5 tópicos de Kafka y guarda cada mensaje
  * como una fila CSV en data/raw/eventos.csv
- * Las columnas siguen el orden definido en kafka/shared/fields.js
  */
 
 const { createKafkaClient } = require("../shared/kafka_client");
 const { FIELDS } = require("../shared/fields");
-const fs   = require("fs");
+const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
-// ── Configuración ────────────────────────────────────────────────────────────
 const TOPICS = [
   "metricas_recursos",
   "logs_http",
@@ -20,7 +18,6 @@ const TOPICS = [
   "logs_seguridad"
 ];
 
-// Columnas extra de metadatos Kafka al final del CSV
 const KAFKA_META_FIELDS = [
   "_kafka_topic",
   "_kafka_partition",
@@ -31,123 +28,140 @@ const KAFKA_META_FIELDS = [
 
 const ALL_FIELDS = [...FIELDS, ...KAFKA_META_FIELDS];
 
-const GROUP_ID    = process.env.CONSUMER_GROUP_CSV || "consumer-group-csv";
-const OUTPUT_DIR  = path.resolve(__dirname, "../../data/raw");
+const GROUP_ID = process.env.CONSUMER_GROUP_CSV || "consumer-group-csv";
+const OUTPUT_DIR = path.resolve(__dirname, "../../data/raw");
 const OUTPUT_FILE = path.join(OUTPUT_DIR, "eventos.csv");
-const LOG_EVERY   = Number(process.env.LOG_EVERY || 1000);
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 }
 
 function timestamp() {
   return new Date().toISOString();
 }
 
-/**
- * Convierte un valor a string CSV-safe:
- * - null / undefined → cadena vacía
- * - Strings con comas, comillas o saltos de línea → envueltos en comillas dobles
- * - Booleanos → "true" / "false"
- */
 function csvEscape(value) {
   if (value === null || value === undefined) return "";
+
   const str = String(value);
+
   if (str.includes(",") || str.includes('"') || str.includes("\n")) {
     return `"${str.replace(/"/g, '""')}"`;
   }
+
   return str;
 }
 
-/**
- * Convierte un objeto evento en una línea CSV usando ALL_FIELDS como orden.
- */
 function objetoALineaCsv(obj) {
   return ALL_FIELDS.map((field) => csvEscape(obj[field])).join(",");
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
 async function runConsumerCsv() {
   ensureDir(OUTPUT_DIR);
 
-  const kafka    = createKafkaClient("consumer-csv");
-  const consumer = kafka.consumer({ groupId: GROUP_ID });
+  const kafka = createKafkaClient("consumer-csv");
 
-  // Si el archivo no existe, escribir cabecera; si ya existe, solo append
+  const consumer = kafka.consumer({
+    groupId: GROUP_ID,
+    sessionTimeout: 30000,
+    heartbeatInterval: 3000,
+    rebalanceTimeout: 60000
+  });
+
   const fileExists = fs.existsSync(OUTPUT_FILE);
-  const stream     = fs.createWriteStream(OUTPUT_FILE, { flags: "a" });
+  const stream = fs.createWriteStream(OUTPUT_FILE, { flags: "a" });
 
   if (!fileExists) {
     stream.write(ALL_FIELDS.join(",") + "\n");
   }
 
-  let totalRecibidos = 0;
-  let totalEscritos  = 0;
+  let totalEscritos = 0;
+  let cerrando = false;
 
-  // Cierre limpio
   const shutdown = async (signal) => {
+    if (cerrando) return;
+    cerrando = true;
+
     console.log(`\n[${timestamp()}] Señal ${signal} recibida. Cerrando consumer CSV...`);
-    stream.end();
-    await consumer.disconnect();
-    console.log(`[${timestamp()}] Consumer CSV detenido. Total escritos: ${totalEscritos}`);
-    process.exit(0);
+
+    try {
+      await consumer.stop();
+      await consumer.disconnect();
+
+      stream.end(() => {
+        console.log(`[${timestamp()}] Consumer CSV detenido. Total escritos: ${totalEscritos}`);
+        process.exit(0);
+      });
+    } catch (error) {
+      console.error(`[${timestamp()}] Error al cerrar consumer CSV:`, error.message);
+      process.exit(1);
+    }
   };
 
-  process.on("SIGINT",  () => shutdown("SIGINT"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   try {
     await consumer.connect();
-    await consumer.subscribe({ topics: TOPICS, fromBeginning: true });
+
+    for (const topic of TOPICS) {
+      await consumer.subscribe({
+        topic,
+        fromBeginning: false
+      });
+    }
 
     console.log("==========================================");
     console.log(" Consumer CSV iniciado");
-    console.log(` Grupo        : ${GROUP_ID}`);
-    console.log(` Tópicos      : ${TOPICS.join(", ")}`);
-    console.log(` Salida       : ${OUTPUT_FILE}`);
-    console.log(` Columnas     : ${ALL_FIELDS.length}`);
+    console.log(` Grupo    : ${GROUP_ID}`);
+    console.log(` Tópicos  : ${TOPICS.join(", ")}`);
+    console.log(` Salida   : ${OUTPUT_FILE}`);
+    console.log(` Columnas : ${ALL_FIELDS.length}`);
     console.log("==========================================\n");
 
     await consumer.run({
-      eachMessage: async ({ topic, partition, message }) => {
-        totalRecibidos++;
+      autoCommit: true,
 
+      eachMessage: async ({ topic, partition, message }) => {
         try {
           const raw = message.value?.toString();
           if (!raw) return;
 
           const evento = JSON.parse(raw);
 
-          // Adjuntar metadatos Kafka
           const registro = {
             ...evento,
-            _kafka_topic     : topic,
-            _kafka_partition : partition,
-            _kafka_offset    : message.offset,
-            _kafka_timestamp : message.timestamp,
-            _consumer_ts     : timestamp()
+            _kafka_topic: topic,
+            _kafka_partition: partition,
+            _kafka_offset: message.offset,
+            _kafka_timestamp: message.timestamp,
+            _consumer_ts: timestamp()
           };
 
-          stream.write(objetoALineaCsv(registro) + "\n");
+          const ok = stream.write(objetoALineaCsv(registro) + "\n");
+
+          if (!ok) {
+            await new Promise((resolve) => stream.once("drain", resolve));
+          }
+
           totalEscritos++;
 
-          if (totalEscritos % LOG_EVERY === 0) {
-            console.log(`[${timestamp()}] [CSV] Escritos: ${totalEscritos} | Tópico actual: ${topic}`);
-
-            console.log("Último evento recibido:");
-            console.log(JSON.stringify(evento, null, 2));
-          }
-        } catch (parseError) {
-          console.error(`[${timestamp()}] Error al parsear mensaje (offset ${message.offset}):`, parseError.message);
+          console.log(`ID recibido: ${evento.id_log}`);
+        } catch (error) {
+          console.error(`[${timestamp()}] Error procesando mensaje:`, error.message);
         }
       }
     });
-
   } catch (error) {
     console.error(`[${timestamp()}] Error crítico en consumer CSV:`, error.message);
+
+    try {
+      await consumer.disconnect();
+    } catch (_) {}
+
     stream.end();
-    await consumer.disconnect();
     process.exit(1);
   }
 }
