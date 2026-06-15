@@ -46,3 +46,4 @@ services:
 
 volumes:
   kafka_data:
+  
