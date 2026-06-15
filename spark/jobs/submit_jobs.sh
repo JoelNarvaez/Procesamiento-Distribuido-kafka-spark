@@ -17,30 +17,43 @@ export MYSQL_PORT="${MYSQL_PORT:-3306}"
 export MYSQL_DATABASE="${MYSQL_DATABASE:-monitoreo_servidores}"
 export MYSQL_USER="${MYSQL_USER:-root}"
 export MYSQL_PASSWORD="${MYSQL_PASSWORD:-root123}"
-export DATA_PATH="${DATA_PATH:-/opt/spark/data/logs.json}"
 export OUTPUT_DIR="${OUTPUT_DIR:-/opt/spark/output}"
+
+# OJO: ya NO se exporta un DATA_PATH global. Antes se exportaba
+# DATA_PATH=/opt/spark/data/logs.json y ese mismo valor lo leían
+# job_csv.py (que espera un CSV) y job_json.py (que espera un JSONL),
+# por lo que al menos uno de los dos siempre leía el archivo equivocado.
+# Cada job usa su propio default; si quieres otro archivo, pásalo por job:
+DATA_JSON="${DATA_JSON:-/opt/spark/data/raw/eventos.jsonl}"
+DATA_CSV="${DATA_CSV:-/opt/spark/data/raw/eventos.csv}"
 
 JOBS_DIR="/opt/spark/jobs"
 SUBMIT="/opt/spark/bin/spark-submit"
 JAR="/opt/spark/jars/mysql-connector-j-8.0.33.jar"
 
+# El driver corre en este contenedor (modo cliente). Con network_mode: host
+# se anuncia con la IP de la máquina para que los executors de los workers
+# puedan conectarse de regreso.
+DRIVER_HOST="${DRIVER_HOST:-192.168.1.65}"
+COMMON_CONF="--conf spark.driver.host=${DRIVER_HOST} --conf spark.driver.bindAddress=0.0.0.0"
+
 run() {
   echo ""
   echo ">>> Ejecutando: $1"
-  $SUBMIT --master "$SPARK_MASTER" --jars "$JAR" "$JOBS_DIR/$2"
+  DATA_PATH="$3" $SUBMIT --master "$SPARK_MASTER" $COMMON_CONF --jars "$JAR" "$JOBS_DIR/$2"
   [ $? -eq 0 ] && echo "    OK: $1" || { echo "    FALLO: $1"; exit 1; }
 }
 
 case "${1:-todos}" in
-  json)        run "Job JSON"         "job_json.py" ;;
-  csv)         run "Job CSV"          "job_csv.py" ;;
-  sql)         run "Job SQL"          "job_sql.py" ;;
-  comparacion) run "Comparación"      "job_comparacion.py" ;;
+  json)        run "Job JSON"    "job_json.py"        "$DATA_JSON" ;;
+  csv)         run "Job CSV"     "job_csv.py"         "$DATA_CSV"  ;;
+  sql)         run "Job SQL"     "job_sql.py"         ""           ;;
+  comparacion) run "Comparación" "job_comparacion.py" "$DATA_JSON" ;;
   todos)
-    run "Job JSON"    "job_json.py"
-    run "Job CSV"     "job_csv.py"
-    run "Job SQL"     "job_sql.py"
-    run "Comparación" "job_comparacion.py"
+    run "Job JSON"    "job_json.py"        "$DATA_JSON"
+    run "Job CSV"     "job_csv.py"         "$DATA_CSV"
+    run "Job SQL"     "job_sql.py"         ""
+    run "Comparación" "job_comparacion.py" "$DATA_JSON"
     ;;
   *) echo "Uso: $0 [json|csv|sql|comparacion|todos]"; exit 1 ;;
 esac

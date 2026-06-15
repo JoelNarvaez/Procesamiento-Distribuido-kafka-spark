@@ -12,9 +12,11 @@ services:
 
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://192.168.1.65:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://192.168.1.65:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
 
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@192.168.1.65:9093,2@192.168.1.66:9093,3@192.168.1.67:9093
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@192.168.1.65:9093,2@192.168.1.66:9093,3@192.168.1.67:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
 
@@ -28,23 +30,23 @@ services:
       - kafka_data:/var/lib/kafka/data
 
   spark-master:
-    image: apache/spark:latest
-    container_name: spark-master-cluster
-    hostname: spark-master
-    user: root
-    ports:
-      - "7077:7077"
-      - "8080:8080"
-    command: >
-      /opt/spark/bin/spark-class
-      org.apache.spark.deploy.master.Master
-      --host 192.168.1.65
-      --port 7077
-      --webui-port 8080
-    volumes:
-      - ../../../data:/opt/spark/data
-      - ../../../spark/jobs:/opt/spark/jobs
-      - ../../../spark/output:/opt/spark/output
+      image: apache/spark:latest
+      container_name: spark-master-cluster
+      hostname: spark-master
+      user: root
+      ports:
+        - "7077:7077"
+        - "8080:8080"
+      command: >
+        /opt/spark/bin/spark-class
+        org.apache.spark.deploy.master.Master
+        --port 7077
+        --webui-port 8080
+      volumes:
+        - ../../../data:/opt/spark/data
+        - ../../../spark/jobs:/opt/spark/jobs
+        - ../../../spark/output:/opt/spark/output
+        - ../../../spark/jars/mysql-connector-j-8.0.33.jar:/opt/spark/jars/mysql-connector-j-8.0.33.jar
 
   mysql:
     image: mysql:8.0
