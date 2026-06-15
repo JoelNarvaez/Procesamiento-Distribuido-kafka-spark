@@ -1,7 +1,7 @@
 /**
  * consumer_sql.js
  * Consume los 5 tópicos de Kafka e inserta cada mensaje
- * directamente en MySQL usando mysql2 con pool de conexiones.
+ * directamente en MySQL, uno por uno.
  */
 
 const { createKafkaClient } = require("../shared/kafka_client");
@@ -57,9 +57,8 @@ const DB_COLUMNS = [
 ];
 
 const TABLE_NAME = process.env.SQL_TABLE || "logs_metricas_servidores";
-const DB_NAME = process.env.SQL_DATABASE || "monitoreo_servidores";
+const DB_NAME = process.env.MYSQL_DATABASE || "monitoreo_servidores";
 const GROUP_ID = process.env.CONSUMER_GROUP_SQL || "consumer-group-sql";
-const BATCH_SIZE = Number(process.env.SQL_BATCH_SIZE || 100);
 
 function timestamp() {
   return new Date().toISOString();
@@ -88,7 +87,7 @@ function crearPool() {
     port: Number(process.env.MYSQL_PORT || 3306),
     user: process.env.MYSQL_USER || "usuario",
     password: process.env.MYSQL_PASSWORD || "usuario123",
-    database: process.env.MYSQL_DATABASE || DB_NAME,
+    database: DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -96,16 +95,14 @@ function crearPool() {
 }
 
 const columnasSql = DB_COLUMNS.map((c) => `\`${c}\``).join(", ");
-const placeholders = `(${DB_COLUMNS.map(() => "?").join(", ")})`;
+const placeholders = DB_COLUMNS.map(() => "?").join(", ");
 
-async function flushBuffer(pool, buffer) {
-  if (buffer.length === 0) return;
+const INSERT_QUERY =
+  `INSERT IGNORE INTO \`${TABLE_NAME}\` (${columnasSql}) VALUES (${placeholders})`;
 
-  const batchPlaceholders = buffer.map(() => placeholders).join(", ");
-  const batchQuery = `INSERT INTO \`${TABLE_NAME}\` (${columnasSql}) VALUES ${batchPlaceholders}`;
-  const batchValues = buffer.flat();
-
-  await pool.execute(batchQuery, batchValues);
+async function insertarEvento(pool, evento) {
+  const valores = eventoAValores(evento);
+  await pool.execute(INSERT_QUERY, valores);
 }
 
 async function runConsumerSql() {
@@ -119,8 +116,7 @@ async function runConsumerSql() {
     rebalanceTimeout: 60000
   });
 
-  let totalInsertados = 0;
-  let buffer = [];
+  let totalProcesados = 0;
   let cerrando = false;
 
   try {
@@ -140,17 +136,10 @@ async function runConsumerSql() {
 
     try {
       await consumer.stop();
-
-      if (buffer.length > 0) {
-        await flushBuffer(pool, buffer);
-        totalInsertados += buffer.length;
-        buffer = [];
-      }
-
       await consumer.disconnect();
       await pool.end();
 
-      console.log(`[${timestamp()}] Consumer SQL detenido. Total insertados: ${totalInsertados}`);
+      console.log(`[${timestamp()}] Consumer SQL detenido. Total procesados: ${totalProcesados}`);
       process.exit(0);
     } catch (error) {
       console.error(`[${timestamp()}] Error al cerrar consumer SQL:`, error.message);
@@ -177,41 +166,35 @@ async function runConsumerSql() {
     console.log(` Tópicos    : ${TOPICS.join(", ")}`);
     console.log(` Base datos : ${DB_NAME}.${TABLE_NAME}`);
     console.log(` Host MySQL : ${process.env.MYSQL_HOST || "192.168.1.65"}`);
-    console.log(` Batch size : ${BATCH_SIZE} registros por INSERT`);
+    console.log(" Modo       : inserción uno por uno");
     console.log("==========================================\n");
 
     await consumer.run({
       autoCommit: true,
 
-      eachMessage: async ({ topic, partition, message }) => {
+      eachMessage: async ({ message }) => {
         try {
           const raw = message.value?.toString();
           if (!raw) return;
 
           const evento = JSON.parse(raw);
 
-          buffer.push(eventoAValores(evento));
+          await insertarEvento(pool, evento);
 
-          if (buffer.length >= BATCH_SIZE) {
-            await flushBuffer(pool, buffer);
-            totalInsertados += buffer.length;
-            buffer = [];
-          }
+          totalProcesados++;
 
           console.log(`ID recibido: ${evento.id_log}`);
         } catch (error) {
-          console.error(`[${timestamp()}] Error procesando mensaje:`, error.message);
+          console.error(
+            `[${timestamp()}] Error procesando mensaje:`,
+            error.code || "",
+            error.sqlMessage || error.message
+          );
         }
       }
     });
   } catch (error) {
     console.error(`[${timestamp()}] Error crítico en consumer SQL:`, error.message);
-
-    try {
-      if (buffer.length > 0) {
-        await flushBuffer(pool, buffer);
-      }
-    } catch (_) {}
 
     try {
       await consumer.disconnect();
