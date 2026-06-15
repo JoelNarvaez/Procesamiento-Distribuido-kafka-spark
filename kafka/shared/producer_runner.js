@@ -30,6 +30,7 @@ async function runProducer({ clientId, topic, tipoEvento }) {
       await producer.send({
         topic,
         acks: -1,
+        timeout: 30000,
         messages: [
           {
             key: evento.servidor,
