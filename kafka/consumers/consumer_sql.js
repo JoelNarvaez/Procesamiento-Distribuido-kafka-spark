@@ -220,14 +220,12 @@
  * consumer_sql.js
  * Consume los 5 tópicos de Kafka e inserta cada mensaje
  * directamente en MySQL usando mysql2 con pool de conexiones.
- * Compatible con el schema definido en database/schema.sql
  */
 
 const { createKafkaClient } = require("../shared/kafka_client");
 const mysql = require("mysql2/promise");
 require("dotenv").config();
 
-// ── Configuración ────────────────────────────────────────────────────────────
 const TOPICS = [
   "metricas_recursos",
   "logs_http",
@@ -276,76 +274,73 @@ const DB_COLUMNS = [
   "mensaje"
 ];
 
-const TABLE_NAME = process.env.SQL_TABLE          || "logs_metricas_servidores";
-const DB_NAME    = process.env.SQL_DATABASE       || "monitoreo_servidores";
-const GROUP_ID   = process.env.CONSUMER_GROUP_SQL || "consumer-group-sql";
-const LOG_EVERY  = Number(process.env.LOG_EVERY   || 1000);
+const TABLE_NAME = process.env.SQL_TABLE || "logs_metricas_servidores";
+const DB_NAME = process.env.SQL_DATABASE || "monitoreo_servidores";
+const GROUP_ID = process.env.CONSUMER_GROUP_SQL || "consumer-group-sql";
 const BATCH_SIZE = Number(process.env.SQL_BATCH_SIZE || 100);
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 function timestamp() {
   return new Date().toISOString();
 }
 
-/**
- * Convierte timestamp ISO a formato MySQL DATETIME
- * "2024-05-01T13:45:00.000Z" → "2024-05-01 13:45:00"
- */
 function toMysqlDatetime(value) {
   if (!value) return null;
   return String(value).replace("T", " ").replace(/\.\d{3}Z$/, "");
 }
 
-/**
- * Extrae los valores del evento en el orden de DB_COLUMNS
- * listos para usar con prepared statements (mysql2 escapa automáticamente)
- */
 function eventoAValores(evento) {
   return DB_COLUMNS.map((col) => {
     const value = evento[col];
+
     if (col === "timestamp_evento") return toMysqlDatetime(value);
     if (typeof value === "boolean") return value ? 1 : 0;
     if (value === null || value === undefined) return null;
+
     return value;
   });
 }
 
-// ── Crear pool de conexiones MySQL ───────────────────────────────────────────
 function crearPool() {
   return mysql.createPool({
-    host               : process.env.MYSQL_HOST     || "192.168.1.65",
-    port               : Number(process.env.MYSQL_PORT || 3306),
-    user               : process.env.MYSQL_USER     || "usuario",
-    password           : process.env.MYSQL_PASSWORD || "usuario123",
-    database           : process.env.MYSQL_DATABASE || DB_NAME,
-    waitForConnections : true,
-    connectionLimit    : 10,
-    queueLimit         : 0
+    host: process.env.MYSQL_HOST || "192.168.1.65",
+    port: Number(process.env.MYSQL_PORT || 3306),
+    user: process.env.MYSQL_USER || "usuario",
+    password: process.env.MYSQL_PASSWORD || "usuario123",
+    database: process.env.MYSQL_DATABASE || DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
   });
 }
 
-// ── INSERT por lotes ─────────────────────────────────────────────────────────
-const columnasSql  = DB_COLUMNS.map((c) => `\`${c}\``).join(", ");
+const columnasSql = DB_COLUMNS.map((c) => `\`${c}\``).join(", ");
 const placeholders = `(${DB_COLUMNS.map(() => "?").join(", ")})`;
 
 async function flushBuffer(pool, buffer) {
   if (buffer.length === 0) return;
+
   const batchPlaceholders = buffer.map(() => placeholders).join(", ");
-  const batchQuery  = `INSERT INTO \`${TABLE_NAME}\` (${columnasSql}) VALUES ${batchPlaceholders}`;
+  const batchQuery = `INSERT INTO \`${TABLE_NAME}\` (${columnasSql}) VALUES ${batchPlaceholders}`;
   const batchValues = buffer.flat();
+
   await pool.execute(batchQuery, batchValues);
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
 async function runConsumerSql() {
-  const pool     = crearPool();
-  const kafka    = createKafkaClient("consumer-sql");
-  const consumer = kafka.consumer({ groupId: GROUP_ID });
+  const pool = crearPool();
+  const kafka = createKafkaClient("consumer-sql");
+
+  const consumer = kafka.consumer({
+    groupId: GROUP_ID,
+    sessionTimeout: 30000,
+    heartbeatInterval: 3000,
+    rebalanceTimeout: 60000
+  });
 
   let totalInsertados = 0;
-  let buffer          = [];
+  let buffer = [];
+  let cerrando = false;
 
-  // Verificar conexión a MySQL antes de arrancar
   try {
     const conn = await pool.getConnection();
     console.log(`[${timestamp()}] Conexión a MySQL establecida correctamente`);
@@ -355,31 +350,44 @@ async function runConsumerSql() {
     process.exit(1);
   }
 
-  // Cierre limpio
   const shutdown = async (signal) => {
+    if (cerrando) return;
+    cerrando = true;
+
     console.log(`\n[${timestamp()}] Señal ${signal} recibida. Cerrando consumer SQL...`);
+
     try {
+      await consumer.stop();
+
       if (buffer.length > 0) {
         await flushBuffer(pool, buffer);
         totalInsertados += buffer.length;
         buffer = [];
-        console.log(`[${timestamp()}] Buffer final insertado.`);
       }
-    } catch (err) {
-      console.error(`[${timestamp()}] Error al insertar buffer final:`, err.message);
+
+      await consumer.disconnect();
+      await pool.end();
+
+      console.log(`[${timestamp()}] Consumer SQL detenido. Total insertados: ${totalInsertados}`);
+      process.exit(0);
+    } catch (error) {
+      console.error(`[${timestamp()}] Error al cerrar consumer SQL:`, error.message);
+      process.exit(1);
     }
-    await consumer.disconnect();
-    await pool.end();
-    console.log(`[${timestamp()}] Consumer SQL detenido. Total insertados: ${totalInsertados}`);
-    process.exit(0);
   };
 
-  process.on("SIGINT",  () => shutdown("SIGINT"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   try {
     await consumer.connect();
-    await consumer.subscribe({ topics: TOPICS, fromBeginning: true });
+
+    for (const topic of TOPICS) {
+      await consumer.subscribe({
+        topic,
+        fromBeginning: false
+      });
+    }
 
     console.log("==========================================");
     console.log(" Consumer SQL iniciado");
@@ -391,12 +399,15 @@ async function runConsumerSql() {
     console.log("==========================================\n");
 
     await consumer.run({
+      autoCommit: true,
+
       eachMessage: async ({ topic, partition, message }) => {
         try {
           const raw = message.value?.toString();
           if (!raw) return;
 
           const evento = JSON.parse(raw);
+
           buffer.push(eventoAValores(evento));
 
           if (buffer.length >= BATCH_SIZE) {
@@ -405,24 +416,25 @@ async function runConsumerSql() {
             buffer = [];
           }
 
-          if (totalInsertados % LOG_EVERY === 0 && totalInsertados > 0) {
-            console.log(`[${timestamp()}] [SQL] Insertados: ${totalInsertados} | Tópico: ${topic}`);
-
-            console.log("Último evento recibido:");
-            console.log(JSON.stringify(evento, null, 2));
-          }
-        } catch (err) {
-          console.error(`[${timestamp()}] Error al procesar mensaje (offset ${message.offset}):`, err.message);
+          console.log(`ID recibido: ${evento.id_log}`);
+        } catch (error) {
+          console.error(`[${timestamp()}] Error procesando mensaje:`, error.message);
         }
       }
     });
-
   } catch (error) {
     console.error(`[${timestamp()}] Error crítico en consumer SQL:`, error.message);
+
     try {
-      if (buffer.length > 0) await flushBuffer(pool, buffer);
+      if (buffer.length > 0) {
+        await flushBuffer(pool, buffer);
+      }
     } catch (_) {}
-    await consumer.disconnect();
+
+    try {
+      await consumer.disconnect();
+    } catch (_) {}
+
     await pool.end();
     process.exit(1);
   }

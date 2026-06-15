@@ -131,3 +131,6 @@ docs/videos/
 *.parquet
 *.orc
 *.avrodata/raw/eventos.jsonl
+data/raw/eventos.jsonl
+data/raw/eventos.jsonl
+data/raw/eventos.jsonl
