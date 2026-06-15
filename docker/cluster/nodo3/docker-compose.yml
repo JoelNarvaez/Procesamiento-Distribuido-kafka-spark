@@ -31,13 +31,13 @@ services:
     image: apache/spark:latest
     container_name: spark-worker-2-cluster
     hostname: spark-worker-2
+    network_mode: host
     user: root
-    ports:
-      - "8081:8081"
     command: >
       /opt/spark/bin/spark-class
       org.apache.spark.deploy.worker.Worker
       spark://192.168.1.65:7077
+      --host 192.168.1.67
       --webui-port 8081
     volumes:
       - ../../../data:/opt/spark/data
