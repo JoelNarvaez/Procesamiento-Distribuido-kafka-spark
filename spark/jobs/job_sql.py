@@ -30,7 +30,7 @@ MYSQL_USER     = os.getenv("MYSQL_USER",     "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "root123")
 OUTPUT_DIR     = os.getenv("OUTPUT_DIR",     "/opt/spark/output")
 
-JDBC_URL    = f"jdbc:mysql://{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}?useSSL=false&serverTimezone=UTC"
+JDBC_URL    = f"jdbc:mysql://{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
 JDBC_DRIVER = "com.mysql.cj.jdbc.Driver"
 JDBC_JAR    = "/opt/spark/jars/mysql-connector-j-8.0.33.jar"
 

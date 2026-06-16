@@ -34,6 +34,8 @@ data/temp/
 # Salidas de Spark
 # =========================
 spark/output/
+spark/eventlog/*
+!spark/eventlog/.gitkeep
 spark/checkpoints/
 spark/warehouse/
 spark/metastore_db/

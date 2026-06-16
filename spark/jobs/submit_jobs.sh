@@ -35,7 +35,8 @@ JAR="/opt/spark/jars/mysql-connector-j-8.0.33.jar"
 # se anuncia con la IP de la máquina para que los executors de los workers
 # puedan conectarse de regreso.
 DRIVER_HOST="${DRIVER_HOST:-100.124.245.95}"
-COMMON_CONF="--conf spark.driver.host=${DRIVER_HOST} --conf spark.driver.bindAddress=0.0.0.0"
+EVENTLOG_DIR="${EVENTLOG_DIR:-/opt/spark/eventlog}"
+COMMON_CONF="--conf spark.driver.host=${DRIVER_HOST} --conf spark.driver.bindAddress=0.0.0.0 --conf spark.eventLog.enabled=true --conf spark.eventLog.dir=${EVENTLOG_DIR}"
 
 # run <titulo> <archivo.py> <data_path> [jars]
 # Solo el job SQL necesita el conector JDBC; los demas se ejecutan sin --jars.

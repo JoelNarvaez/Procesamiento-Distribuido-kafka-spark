@@ -20,6 +20,17 @@ if [ -f "${DEST_DIR}/${JAR}" ]; then
   exit 0
 fi
 
+# Docker crea una CARPETA con este nombre si se hizo 'compose up' antes de
+# tener el .jar. Hay que bajar el compose y borrarla antes de descargar.
+if [ -d "${DEST_DIR}/${JAR}" ]; then
+  echo "[ERROR] '${DEST_DIR}/${JAR}' es una CARPETA (la creó Docker)."
+  echo "        Soluciona asi:"
+  echo "          docker compose -f docker/cluster/nodoN/docker-compose.yml down"
+  echo "          rm -rf '${DEST_DIR}/${JAR}'"
+  echo "          bash spark/jars/descargar_driver.sh"
+  exit 1
+fi
+
 echo "Descargando ${JAR}..."
 if command -v curl >/dev/null 2>&1; then
   curl -fSL "$URL" -o "${DEST_DIR}/${JAR}"
