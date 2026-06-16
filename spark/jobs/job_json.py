@@ -22,7 +22,7 @@ from pyspark.sql.functions import (
     col, count, avg, min as smin, max as smax, stddev, round as rnd, desc, sum as ssum
 )
 
-SPARK_MASTER = os.getenv("SPARK_MASTER", "spark://192.168.1.65:7077")
+SPARK_MASTER = os.getenv("SPARK_MASTER", "spark://100.124.245.95:7077")
 DATA_PATH    = os.getenv("DATA_PATH",    "/opt/spark/data/raw/eventos.jsonl")
 OUTPUT_DIR   = os.getenv("OUTPUT_DIR",   "/opt/spark/output")
 

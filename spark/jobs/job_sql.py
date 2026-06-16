@@ -22,8 +22,8 @@ import csv as csvmod
 import time
 from pyspark.sql import SparkSession
 
-SPARK_MASTER   = os.getenv("SPARK_MASTER",   "spark://192.168.1.65:7077")
-MYSQL_HOST     = os.getenv("MYSQL_HOST",     "192.168.1.65")
+SPARK_MASTER   = os.getenv("SPARK_MASTER",   "spark://100.124.245.95:7077")
+MYSQL_HOST     = os.getenv("MYSQL_HOST",     "100.124.245.95")
 MYSQL_PORT     = os.getenv("MYSQL_PORT",     "3306")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "monitoreo_servidores")
 MYSQL_USER     = os.getenv("MYSQL_USER",     "root")

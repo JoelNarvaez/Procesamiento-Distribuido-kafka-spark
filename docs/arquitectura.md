@@ -1,26 +1,31 @@
 # Arquitectura del sistema
 
 ## Nodos y red
-- 3 nodos en LAN `192.168.1.0/24` con IPs fijas: `.65`, `.66`, `.67`.
-- Nodo 1: Linux físico. Nodos 2 y 3: VM Ubuntu (bridged) sobre Windows.
-- El modo *bridged* hace que cada VM tenga su propia IP en la red física y
-  aparezca como un host independiente en la LAN.
+- 3 nodos conectados por **Tailscale** (VPN mesh) con IPs fijas:
+  `100.124.245.95`, `100.126.190.35`, `100.87.252.100`.
+- Nodo 1: Linux físico. Nodos 2 y 3: VM Ubuntu sobre Windows.
+- Tailscale se instala DENTRO de cada VM (no en el Windows host) para que el
+  contenedor con `network_mode: host` se enlace a la IP `100.x` de la VM.
+- Tailscale funciona sobre cualquier red (incluso NAT), por lo que la VM no
+  necesita modo puente.
+- Nota de entrega: la propuesta deja Tailscale como auxiliar; aquí es la red
+  principal y conviene justificarlo en la documentación.
 
 ## Kafka (KRaft, sin ZooKeeper)
 - 3 brokers que también son controllers (`KAFKA_PROCESS_ROLES=broker,controller`).
-- Quórum de controllers: `1@.65:9093, 2@.66:9093, 3@.67:9093`.
+- Quórum de controllers: `1@100.124.245.95:9093, 2@100.126.190.35:9093, 3@100.87.252.100:9093`.
 - Listener cliente `9092`, listener de control `9093`.
-- `advertised.listeners` con la IP de la LAN de cada nodo (clave para que los
-  clientes externos se conecten).
+- `advertised.listeners` con la IP de Tailscale de cada nodo (clave para que los
+  clientes de otros nodos se conecten).
 - 5 tópicos, 3 particiones, factor de replicación 3, `min.insync.replicas=1`.
 - Kafka usa puertos fijos publicados -> funciona bien aun en Docker dentro de VM.
 
 ## Spark (Standalone)
 - 1 Master (nodo 1) + 2 Workers (nodos 2 y 3).
 - Todos los servicios de Spark usan `network_mode: host` para exponer los
-  puertos aleatorios de los executors sobre la LAN. Requiere Linux (de ahí las VMs).
+  puertos aleatorios de los executors sobre Tailscale. Requiere Linux (de ahí las VMs).
 - El driver corre en el contenedor del master en modo cliente
-  (`spark.driver.host=192.168.1.65`, `bindAddress=0.0.0.0`).
+  (`spark.driver.host=100.124.245.95`, `bindAddress=0.0.0.0`).
 
 ## Flujo de datos
 ```

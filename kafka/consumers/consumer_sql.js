@@ -87,7 +87,7 @@ function eventoAValores(evento) {
 
 function crearPool() {
   return mysql.createPool({
-    host: process.env.MYSQL_HOST || "192.168.1.65",
+    host: process.env.MYSQL_HOST || "100.124.245.95",
     port: Number(process.env.MYSQL_PORT || 3306),
     user: process.env.MYSQL_USER || "usuario",
     password: process.env.MYSQL_PASSWORD || "usuario123",
@@ -205,7 +205,7 @@ async function runConsumerSql() {
     console.log(` Grupo      : ${GROUP_ID}`);
     console.log(` Tópicos    : ${TOPICS.join(", ")}`);
     console.log(` Base datos : ${DB_NAME}.${TABLE_NAME}`);
-    console.log(` Host MySQL : ${process.env.MYSQL_HOST || "192.168.1.65"}`);
+    console.log(` Host MySQL : ${process.env.MYSQL_HOST || "100.124.245.95"}`);
     console.log(` Modo       : inserción por lotes (BATCH_SIZE=${BATCH_SIZE}, FLUSH_MS=${FLUSH_MS})`);
     console.log("==========================================\n");
 

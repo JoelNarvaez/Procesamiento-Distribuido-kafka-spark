@@ -1,40 +1,49 @@
 # Sistema distribuido de monitoreo de logs y métricas (Kafka + Spark)
 
 Monitoreo distribuido de logs y métricas de servidores sobre **3 nodos** conectados
-en una **red LAN con IPs fijas**, usando **Apache Kafka** (clúster KRaft) y
-**Apache Spark** (1 master + 2 workers), todo en Docker.
+mediante **Tailscale** (VPN mesh, IPs fijas `100.x`), usando **Apache Kafka**
+(clúster KRaft) y **Apache Spark** (1 master + 2 workers), todo en Docker.
 
 ## Arquitectura
 
-| Nodo | IP fija | Rol Kafka | Rol Spark | SO |
-|------|---------|-----------|-----------|----|
-| Nodo 1 | `192.168.1.65` | Broker + Controller 1 | **Master** + MySQL + productores | Linux (físico) |
-| Nodo 2 | `192.168.1.66` | Broker + Controller 2 | Worker 1 | **VM Ubuntu (bridged)** sobre Windows |
-| Nodo 3 | `192.168.1.67` | Broker + Controller 3 | Worker 2 | **VM Ubuntu (bridged)** sobre Windows |
+| Nodo | IP Tailscale | Rol Kafka | Rol Spark | SO |
+|------|--------------|-----------|-----------|----|
+| Nodo 1 | `100.124.245.95` | Broker + Controller 1 | **Master** + MySQL + productores | Linux (físico) |
+| Nodo 2 | `100.126.190.35` | Broker + Controller 2 | Worker 1 | **VM Ubuntu** sobre Windows |
+| Nodo 3 | `100.87.252.100` | Broker + Controller 3 | Worker 2 | **VM Ubuntu** sobre Windows |
 
-> **Importante (Windows):** los nodos 2 y 3 son máquinas Windows. Spark necesita
-> `network_mode: host` para que los executors abran sus puertos sobre la LAN, y eso
-> **solo funciona en Linux**. Por eso los workers corren dentro de una **VM Ubuntu
-> con adaptador en modo puente (bridged, NO NAT)**, de modo que cada VM obtiene su
-> propia IP en la red física (`192.168.1.66` / `192.168.1.67`).
+> **Red (Tailscale):** los 3 nodos están en la misma cuenta de Tailscale y se ven
+> por sus IPs `100.x`. Tailscale funciona sobre cualquier red (incluso detrás de NAT),
+> así que **la VM puede usar el adaptador NAT por defecto**: no requiere modo puente.
+>
+> **Por qué VMs en los nodos Windows:** Spark necesita `network_mode: host` para que
+> los executors abran sus puertos sobre la red, y eso **solo funciona en Linux**. Por
+> eso los workers corren dentro de una **VM Ubuntu con Tailscale instalado DENTRO de la
+> VM** (no en el Windows host), para que el contenedor se enlace a la IP `100.x` de la VM.
 
 ```
-                 LAN  192.168.1.0/24
-   +----------------+----------------+----------------+
-   | Nodo1 (.65)    | Nodo2 (.66)    | Nodo3 (.67)    |
-   | Linux fisico   | VM Ubuntu      | VM Ubuntu      |
-   | Kafka b+c 1    | Kafka b+c 2    | Kafka b+c 3    |
-   | Spark Master   | Spark Worker 1 | Spark Worker 2 |
-   | MySQL          |                |                |
-   +----------------+----------------+----------------+
+                 Tailnet  100.x (Tailscale)
+   +-------------------+-------------------+-------------------+
+   | Nodo1 .124.245.95 | Nodo2 .126.190.35 | Nodo3 .87.252.100 |
+   | Linux fisico      | VM Ubuntu         | VM Ubuntu         |
+   | Kafka b+c 1       | Kafka b+c 2       | Kafka b+c 3       |
+   | Spark Master      | Spark Worker 1    | Spark Worker 2    |
+   | MySQL             |                   |                   |
+   +-------------------+-------------------+-------------------+
 ```
+
+> ⚠️ **Nota para la entrega:** la propuesta original recomienda LAN por router y deja
+> Tailscale como herramienta *auxiliar*. Aquí se usa Tailscale como red principal;
+> conviene justificarlo en la documentación si el profesor lo exige.
 
 ## Requisitos en cada nodo
 
 - Docker + Docker Compose
+- **Tailscale instalado y autenticado con la misma cuenta** (en el Linux físico y
+  DENTRO de cada VM Ubuntu). Verifica con `tailscale status` y `tailscale ip -4`.
 - Node.js (solo nodo 1, para productores/consumidores)
 - El repo **clonado en la misma ruta absoluta** en los 3 nodos
-- IPs fijas configuradas (`.65`, `.66`, `.67`) y los nodos viéndose entre sí (`ping`)
+- Los nodos viéndose entre sí: `ping 100.126.190.35` desde el master
 
 ## Puesta en marcha
 
@@ -55,7 +64,7 @@ docker compose -f docker/cluster/nodo3/docker-compose.yml up -d
 ```
 Verificar:
 - Kafka: los 3 brokers arriba.
-- Spark Master UI: http://192.168.1.65:8080 -> deben aparecer **2 workers ALIVE**.
+- Spark Master UI: http://100.124.245.95:8080 -> deben aparecer **2 workers ALIVE**.
 
 ### 3. Crear los tópicos (desde el nodo 1)
 ```bash
@@ -113,7 +122,7 @@ Los resultados quedan siempre en el master, en `spark/output/`.
 # Apagar un broker y verificar que el clúster sigue
 docker stop kafka-nodo3
 docker exec kafka-nodo1 /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server 192.168.1.65:9092 --describe --topic logs_http
+  --bootstrap-server 100.124.245.95:9092 --describe --topic logs_http
 # Reincorporarlo
 docker start kafka-nodo3
 ```
@@ -121,7 +130,7 @@ Con replicación 3 y `min.insync.replicas=1`, el clúster sigue produciendo y
 consumiendo aunque caiga un nodo.
 
 ## Solución de problemas
-- **Los workers no aparecen ALIVE**: la VM no está en modo *bridged* o falta
-  `network_mode: host`. Revisa que `ping 192.168.1.66` funcione desde el master.
+- **Los workers no aparecen ALIVE**: Tailscale no está activo dentro de la VM o falta
+  `network_mode: host`. Revisa que `ping 100.126.190.35` y `tailscale status` funcionen.
 - **`job_sql` falla por driver JDBC**: corre `spark/jars/descargar_driver.sh` en ese nodo.
 - **`FileNotFoundException` en JSON/CSV**: faltó `scripts/sync_datos.sh`.

@@ -11,8 +11,8 @@
 # Desde fuera del contenedor:
 #   docker exec spark-master-cluster bash /opt/spark/jobs/submit_jobs.sh
 
-export SPARK_MASTER="${SPARK_MASTER:-spark://192.168.1.65:7077}"
-export MYSQL_HOST="${MYSQL_HOST:-192.168.1.65}"
+export SPARK_MASTER="${SPARK_MASTER:-spark://100.124.245.95:7077}"
+export MYSQL_HOST="${MYSQL_HOST:-100.124.245.95}"
 export MYSQL_PORT="${MYSQL_PORT:-3306}"
 export MYSQL_DATABASE="${MYSQL_DATABASE:-monitoreo_servidores}"
 export MYSQL_USER="${MYSQL_USER:-root}"
@@ -34,7 +34,7 @@ JAR="/opt/spark/jars/mysql-connector-j-8.0.33.jar"
 # El driver corre en este contenedor (modo cliente). Con network_mode: host
 # se anuncia con la IP de la máquina para que los executors de los workers
 # puedan conectarse de regreso.
-DRIVER_HOST="${DRIVER_HOST:-192.168.1.65}"
+DRIVER_HOST="${DRIVER_HOST:-100.124.245.95}"
 COMMON_CONF="--conf spark.driver.host=${DRIVER_HOST} --conf spark.driver.bindAddress=0.0.0.0"
 
 # run <titulo> <archivo.py> <data_path> [jars]
