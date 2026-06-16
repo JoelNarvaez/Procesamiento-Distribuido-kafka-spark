@@ -1,111 +1,124 @@
 """
-Job: job_csv.py
-Fuente: archivo CSV en data/raw/eventos.csv
+Job: job_csv.py   (PROCESAMIENTO LOCAL)
+Fuente: archivo CSV local en data/raw/eventos.csv
 
-Analisis (sobre datos CSV):
-  - Conteo por tipo de evento
-  - Tiempo de respuesta por servicio (avg, min, max, stddev)
-  - Peticiones por minuto promedio por servicio
-  - Latencia de red promedio por servidor
-  - Total de bytes enviados y recibidos
-  - Errores por minuto y total de errores por servidor
+Corre en modo LOCAL (local[*]) en el master: NO usa los workers ni necesita
+archivos compartidos. Sirve para análisis local y como base de comparación
+contra el procesamiento distribuido (job_sql / job_comparacion).
 
-Ejecutar (recomendado, via submit_jobs.sh):
+  >>> PARA MODIFICAR LOS ANALISIS, edita la lista ANALISIS de abajo. <<<
+
+Ejecutar:
   docker exec spark-master-cluster bash /opt/spark/jobs/submit_jobs.sh csv
 """
 
 import os
 import csv as csvmod
 import time
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col, count, avg, min as smin, max as smax, stddev, round as rnd, desc, sum as ssum
-)
+from pyspark.sql import SparkSession, functions as F
 
-SPARK_MASTER = os.getenv("SPARK_MASTER", "spark://100.124.245.95:7077")
-DATA_PATH    = os.getenv("DATA_PATH",    "/opt/spark/data/raw/eventos.csv")
-OUTPUT_DIR   = os.getenv("OUTPUT_DIR",   "/opt/spark/output")
+JOB_MASTER = os.getenv("JOB_MASTER", "local[*]")   # local por defecto
+DATA_PATH  = os.getenv("DATA_PATH",  "/opt/spark/data/raw/eventos.csv")
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/opt/spark/output")
 
 KAFKA_META = ["_kafka_topic", "_kafka_partition", "_kafka_offset", "_kafka_timestamp", "_consumer_ts"]
 
+# ============================================================
+#  ZONA EDITABLE — define aqui tus analisis (agrupaciones/busquedas).
+#   nombre   : titulo que se imprime
+#   filtro   : condicion tipo SQL para buscar/filtrar, o None
+#   group_by : lista de columnas para agrupar
+#   agg      : lista de (funcion, columna, alias)
+#              funciones: count, avg, min, max, sum, stddev
+#              usa "*" como columna con count para contar filas
+#   orden    : (alias, "desc"|"asc") o None
+#   guardar  : nombre de archivo CSV de salida, o None
+# ============================================================
+ANALISIS = [
+    {"nombre": "Conteo por tipo de evento",
+     "filtro": None, "group_by": ["tipo_evento"],
+     "agg": [("count", "*", "total")],
+     "orden": ("total", "desc"), "guardar": None},
+
+    {"nombre": "Tiempo de respuesta por servicio (avg, min, max, stddev)",
+     "filtro": None, "group_by": ["servicio"],
+     "agg": [("count", "*", "total_peticiones"),
+             ("avg", "tiempo_respuesta_ms", "resp_avg_ms"),
+             ("min", "tiempo_respuesta_ms", "resp_min_ms"),
+             ("max", "tiempo_respuesta_ms", "resp_max_ms"),
+             ("stddev", "tiempo_respuesta_ms", "resp_stddev_ms"),
+             ("avg", "peticiones_por_minuto", "peticiones_min_avg")],
+     "orden": ("resp_avg_ms", "desc"), "guardar": "respuesta_por_servicio"},
+
+    {"nombre": "Latencia de red promedio por servidor",
+     "filtro": None, "group_by": ["servidor"],
+     "agg": [("avg", "latencia_red_ms", "latencia_avg_ms"),
+             ("max", "latencia_red_ms", "latencia_max_ms")],
+     "orden": ("latencia_avg_ms", "desc"), "guardar": None},
+
+    {"nombre": "Total de bytes por servidor (entrada/salida)",
+     "filtro": None, "group_by": ["servidor"],
+     "agg": [("sum", "bytes_entrada", "total_bytes_entrada"),
+             ("sum", "bytes_salida", "total_bytes_salida")],
+     "orden": ("total_bytes_salida", "desc"), "guardar": None},
+
+    {"nombre": "Errores por servidor",
+     "filtro": None, "group_by": ["servidor"],
+     "agg": [("avg", "errores_minuto", "errores_min_avg"),
+             ("sum", "errores_minuto", "errores_total")],
+     "orden": ("errores_total", "desc"), "guardar": "errores_por_servidor"},
+]
+# ============================================================
+
+FUN = {"count": F.count, "avg": F.avg, "min": F.min, "max": F.max, "sum": F.sum, "stddev": F.stddev}
+
+
+def construir_expr(fn, columna, alias):
+    expr = F.count(F.lit(1)) if (fn == "count" and columna == "*") else FUN[fn](F.col(columna))
+    if fn in ("avg", "stddev"):
+        expr = F.round(expr, 2)
+    return expr.alias(alias)
+
+
+def ejecutar(df, a):
+    base = df.where(a["filtro"]) if a.get("filtro") else df
+    exprs = [construir_expr(fn, c, al) for (fn, c, al) in a["agg"]]
+    res = base.groupBy(*a["group_by"]).agg(*exprs)
+    if a.get("orden"):
+        col_o, dir_o = a["orden"]
+        res = res.orderBy(F.col(col_o).desc() if dir_o == "desc" else F.col(col_o).asc())
+    return res
+
 
 def guardar_csv(df, ruta):
-    """Recolecta en el driver (master) y escribe un unico CSV."""
     filas = df.collect()
-    columnas = df.columns
+    cols = df.columns
     os.makedirs(os.path.dirname(ruta), exist_ok=True)
     with open(ruta, "w", newline="") as f:
         w = csvmod.writer(f)
-        w.writerow(columnas)
+        w.writerow(cols)
         for r in filas:
-            w.writerow([r[c] for c in columnas])
+            w.writerow([r[c] for c in cols])
     print(f"  -> guardado: {ruta}")
 
 
-spark = SparkSession.builder \
-    .appName("Job_CSV_LogsServidores") \
-    .master(SPARK_MASTER) \
-    .getOrCreate()
-
+spark = SparkSession.builder.appName("Job_CSV_LogsServidores").master(JOB_MASTER).getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 
-print("\n=== JOB CSV - LOGS DE SERVIDORES ===\n")
+print(f"\n=== JOB CSV — LOGS DE SERVIDORES (modo {JOB_MASTER}) ===\n")
 inicio = time.time()
 
-df = spark.read \
-    .option("header", True) \
-    .option("inferSchema", True) \
-    .csv(DATA_PATH) \
-    .drop(*KAFKA_META)
+df = spark.read.option("header", True).option("inferSchema", True).csv(DATA_PATH).drop(*KAFKA_META)
 df.cache()
 total = df.count()
 print(f"Registros cargados: {total:,}")
 
-# 1) Conteo por tipo de evento
-print("\n--- Conteo por tipo de evento ---")
-tipos = df.groupBy("tipo_evento").agg(count("*").alias("total")).orderBy(desc("total"))
-tipos.show()
+for a in ANALISIS:
+    print(f"\n--- {a['nombre']} ---")
+    res = ejecutar(df, a)
+    res.show()
+    if a.get("guardar"):
+        guardar_csv(res, f"{OUTPUT_DIR}/resultado_csv/{a['guardar']}.csv")
 
-# 2) Tiempo de respuesta por servicio: avg, min, max, stddev
-print("\n--- Tiempo de respuesta por servicio (avg, min, max, stddev) ---")
-respuesta = df.groupBy("servicio").agg(
-    count("*").alias("total_peticiones"),
-    rnd(avg("tiempo_respuesta_ms"), 2).alias("resp_avg_ms"),
-    smin("tiempo_respuesta_ms").alias("resp_min_ms"),
-    smax("tiempo_respuesta_ms").alias("resp_max_ms"),
-    rnd(stddev("tiempo_respuesta_ms"), 2).alias("resp_stddev_ms"),
-    rnd(avg("peticiones_por_minuto"), 2).alias("peticiones_min_avg")
-).orderBy(desc("resp_avg_ms"))
-respuesta.show()
-
-# 3) Latencia de red promedio por servidor
-print("\n--- Latencia de red promedio por servidor ---")
-latencia = df.groupBy("servidor").agg(
-    rnd(avg("latencia_red_ms"), 2).alias("latencia_avg_ms"),
-    rnd(smax("latencia_red_ms"), 2).alias("latencia_max_ms")
-).orderBy(desc("latencia_avg_ms"))
-latencia.show()
-
-# 4) Total de bytes enviados y recibidos (global)
-print("\n--- Total de bytes (entrada/salida) ---")
-bytes_tot = df.agg(
-    ssum("bytes_entrada").alias("total_bytes_entrada"),
-    ssum("bytes_salida").alias("total_bytes_salida")
-)
-bytes_tot.show()
-
-# 5) Errores por minuto y total de errores por servidor
-print("\n--- Errores por servidor ---")
-errores = df.groupBy("servidor").agg(
-    rnd(avg("errores_minuto"), 2).alias("errores_min_avg"),
-    ssum("errores_minuto").alias("errores_total")
-).orderBy(desc("errores_total"))
-errores.show()
-
-fin = time.time()
-print(f"\nTiempo total (distribuido): {fin - inicio:.2f} s | Registros: {total:,}")
-
-guardar_csv(respuesta, f"{OUTPUT_DIR}/resultado_csv/respuesta_por_servicio.csv")
-guardar_csv(errores,   f"{OUTPUT_DIR}/resultado_csv/errores_por_servidor.csv")
-
+print(f"\nTiempo total (local): {time.time() - inicio:.2f} s | Registros: {total:,}")
 spark.stop()

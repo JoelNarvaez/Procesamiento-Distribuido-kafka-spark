@@ -38,27 +38,30 @@ DRIVER_HOST="${DRIVER_HOST:-100.124.245.95}"
 EVENTLOG_DIR="${EVENTLOG_DIR:-/opt/spark/eventlog}"
 COMMON_CONF="--conf spark.driver.host=${DRIVER_HOST} --conf spark.driver.bindAddress=0.0.0.0 --conf spark.eventLog.enabled=true --conf spark.eventLog.dir=${EVENTLOG_DIR}"
 
-# run <titulo> <archivo.py> <data_path> [jars]
-# Solo el job SQL necesita el conector JDBC; los demas se ejecutan sin --jars.
+# run <titulo> <archivo.py> <master> <data_path> [jars]
+#   - json/csv  -> local[*]  (procesamiento LOCAL, sin workers ni datos compartidos)
+#   - sql       -> spark://  (DISTRIBUIDO, lee MySQL por JDBC) + --jars
+#   - comparacion -> local[*] como lanzador; el codigo crea las 3 sesiones
+#                    (local[1], local[*] y cluster) y lee MySQL -> + --jars
 run() {
   echo ""
-  echo ">>> Ejecutando: $1"
+  echo ">>> Ejecutando: $1  (master: $3)"
   local extra=""
-  [ -n "$4" ] && extra="--jars $4"
-  DATA_PATH="$3" $SUBMIT --master "$SPARK_MASTER" $COMMON_CONF $extra "$JOBS_DIR/$2"
+  [ -n "$5" ] && extra="--jars $5"
+  DATA_PATH="$4" $SUBMIT --master "$3" $COMMON_CONF $extra "$JOBS_DIR/$2"
   [ $? -eq 0 ] && echo "    OK: $1" || { echo "    FALLO: $1"; exit 1; }
 }
 
 case "${1:-todos}" in
-  json)        run "Job JSON"    "job_json.py"        "$DATA_JSON" ;;
-  csv)         run "Job CSV"     "job_csv.py"         "$DATA_CSV"  ;;
-  sql)         run "Job SQL"     "job_sql.py"         ""           "$JAR" ;;
-  comparacion) run "Comparación" "job_comparacion.py" "$DATA_JSON" ;;
+  json)        run "Job JSON"    "job_json.py"        "local[*]"      "$DATA_JSON" ;;
+  csv)         run "Job CSV"     "job_csv.py"         "local[*]"      "$DATA_CSV"  ;;
+  sql)         run "Job SQL"     "job_sql.py"         "$SPARK_MASTER" ""           "$JAR" ;;
+  comparacion) run "Comparación" "job_comparacion.py" "local[*]"     ""           "$JAR" ;;
   todos)
-    run "Job JSON"    "job_json.py"        "$DATA_JSON"
-    run "Job CSV"     "job_csv.py"         "$DATA_CSV"
-    run "Job SQL"     "job_sql.py"         ""           "$JAR"
-    run "Comparación" "job_comparacion.py" "$DATA_JSON"
+    run "Job JSON"    "job_json.py"        "local[*]"      "$DATA_JSON"
+    run "Job CSV"     "job_csv.py"         "local[*]"      "$DATA_CSV"
+    run "Job SQL"     "job_sql.py"         "$SPARK_MASTER" ""           "$JAR"
+    run "Comparación" "job_comparacion.py" "local[*]"     ""           "$JAR"
     ;;
   *) echo "Uso: $0 [json|csv|sql|comparacion|todos]"; exit 1 ;;
 esac

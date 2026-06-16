@@ -1,12 +1,16 @@
 """
-Job: job_comparacion.py
-Compara el MISMO procesamiento ejecutado en:
-  - LOCAL 1 nucleo   (local[1])   -> simula una sola maquina, sin paralelismo
-  - LOCAL n nucleos  (local[*])   -> una sola maquina, todos sus nucleos
-  - DISTRIBUIDO      (cluster)    -> los 3 nodos (master + 2 workers)
+Job: job_comparacion.py   (COMPARACION LOCAL vs DISTRIBUIDO)
+Fuente: tabla MySQL (JDBC) — el mismo origen en los 3 modos para una
+comparacion justa.
 
-Imprime los tiempos y el speedup, y guarda un resumen CSV en el master.
-Demuestra el beneficio del procesamiento distribuido.
+Corre EXACTAMENTE el mismo trabajo en:
+  - LOCAL 1 nucleo   (local[1])  -> una maquina, sin paralelismo
+  - LOCAL n nucleos  (local[*])  -> una maquina, todos sus nucleos
+  - DISTRIBUIDO      (cluster)   -> master + 2 workers
+e imprime los tiempos y el speedup.
+
+Se usa MySQL (no archivos) porque es el unico origen que corre distribuido
+sin almacenamiento compartido entre nodos.
 
 Ejecutar:
   docker exec spark-master-cluster bash /opt/spark/jobs/submit_jobs.sh comparacion
@@ -16,30 +20,43 @@ import os
 import csv as csvmod
 import time
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, count, avg, stddev, round as rnd, desc
 
-SPARK_MASTER = os.getenv("SPARK_MASTER", "spark://100.124.245.95:7077")
-DATA_PATH    = os.getenv("DATA_PATH",    "/opt/spark/data/raw/eventos.jsonl")
-OUTPUT_DIR   = os.getenv("OUTPUT_DIR",   "/opt/spark/output")
+SPARK_MASTER   = os.getenv("SPARK_MASTER",   "spark://100.124.245.95:7077")
+MYSQL_HOST     = os.getenv("MYSQL_HOST",     "100.124.245.95")
+MYSQL_PORT     = os.getenv("MYSQL_PORT",     "3306")
+MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "monitoreo_servidores")
+MYSQL_USER     = os.getenv("MYSQL_USER",     "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "root123")
+OUTPUT_DIR     = os.getenv("OUTPUT_DIR",     "/opt/spark/output")
 
-KAFKA_META = ["_kafka_topic", "_kafka_partition", "_kafka_offset", "_kafka_timestamp", "_consumer_ts"]
+JDBC_URL    = f"jdbc:mysql://{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+JDBC_DRIVER = "com.mysql.cj.jdbc.Driver"
+JDBC_JAR    = "/opt/spark/jars/mysql-connector-j-8.0.33.jar"
+
+
+def leer_mysql(spark):
+    return spark.read \
+        .format("jdbc") \
+        .option("url", JDBC_URL) \
+        .option("dbtable", "logs_metricas_servidores") \
+        .option("user", MYSQL_USER) \
+        .option("password", MYSQL_PASSWORD) \
+        .option("driver", JDBC_DRIVER) \
+        .option("fetchsize", "5000") \
+        .load()
 
 
 def procesar(spark):
-    """Mismo trabajo en los 3 modos: lectura + 3 agregaciones forzadas."""
-    df = spark.read.json(DATA_PATH).drop(*KAFKA_META)
+    """El mismo trabajo en los 3 modos: lectura + 3 agregaciones forzadas."""
+    df = leer_mysql(spark)
     total = df.count()
+    df.createOrReplaceTempView("logs")
 
-    df.groupBy("nivel").agg(count("*").alias("total")).collect()
-
-    df.groupBy("servidor").agg(
-        rnd(avg("uso_cpu_porcentaje"), 2).alias("cpu_avg"),
-        rnd(stddev("uso_cpu_porcentaje"), 2).alias("cpu_stddev")
-    ).collect()
-
-    df.groupBy("zona", "tipo_evento").agg(count("*").alias("total")) \
-      .orderBy(desc("total")).collect()
-
+    spark.sql("SELECT nivel, COUNT(*) FROM logs GROUP BY nivel").collect()
+    spark.sql("""SELECT servidor, AVG(uso_cpu_porcentaje), STDDEV(uso_cpu_porcentaje)
+                 FROM logs GROUP BY servidor""").collect()
+    spark.sql("""SELECT zona, tipo_evento, COUNT(*) AS t
+                 FROM logs GROUP BY zona, tipo_evento ORDER BY t DESC""").collect()
     return total
 
 
@@ -50,6 +67,7 @@ def medir(nombre, master_url):
     spark = SparkSession.builder \
         .appName(f"Comparacion_{nombre}") \
         .master(master_url) \
+        .config("spark.jars", JDBC_JAR) \
         .getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     t0 = time.time()
@@ -61,8 +79,8 @@ def medir(nombre, master_url):
     return total, elapsed
 
 
-total, t_local1 = medir("MODO LOCAL (1 nucleo)",  "local[1]")
-_,     t_localn = medir("MODO LOCAL (n nucleos)", "local[*]")
+total, t_local1 = medir("MODO LOCAL (1 nucleo)",      "local[1]")
+_,     t_localn = medir("MODO LOCAL (n nucleos)",     "local[*]")
 _,     t_dist   = medir("MODO DISTRIBUIDO (3 nodos)", SPARK_MASTER)
 
 speedup_1 = t_local1 / t_dist if t_dist > 0 else 0
@@ -71,12 +89,12 @@ speedup_n = t_localn / t_dist if t_dist > 0 else 0
 print("\n" + "=" * 50)
 print("  COMPARATIVA")
 print("=" * 50)
-print(f"  Local 1 nucleo:   {t_local1:.2f} s")
-print(f"  Local n nucleos:  {t_localn:.2f} s")
-print(f"  Distribuido:      {t_dist:.2f} s")
-print(f"  Speedup vs 1 nucleo:  {speedup_1:.2f}x")
-print(f"  Speedup vs n nucleos: {speedup_n:.2f}x")
-print(f"  Registros:        {total:,}")
+print(f"  Local 1 nucleo:        {t_local1:.2f} s")
+print(f"  Local n nucleos:       {t_localn:.2f} s")
+print(f"  Distribuido (3 nodos): {t_dist:.2f} s")
+print(f"  Speedup vs 1 nucleo:   {speedup_1:.2f}x")
+print(f"  Speedup vs n nucleos:  {speedup_n:.2f}x")
+print(f"  Registros:             {total:,}")
 print("=" * 50 + "\n")
 
 ruta = f"{OUTPUT_DIR}/resultado_comparacion/comparacion.csv"
