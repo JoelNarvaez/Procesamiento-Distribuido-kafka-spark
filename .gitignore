@@ -130,7 +130,12 @@ docs/videos/
 # =========================
 *.parquet
 *.orc
-*.avrodata/raw/eventos.jsonl
+*.avro
 data/raw/eventos.jsonl
-data/raw/eventos.jsonl
-data/raw/eventos.jsonl
+data/raw/eventos.csv
+
+# =========================
+# Driver JDBC de Spark (se descarga con spark/jars/descargar_driver.sh)
+# =========================
+spark/jars/*.jar
+!spark/jars/.gitkeep

@@ -1,18 +1,26 @@
 """
 Job: job_sql.py
-Descripción: Lee los logs desde MySQL y realiza agregaciones
-             usando Spark SQL sobre la tabla logs_metricas_servidores.
+Fuente: tabla MySQL logs_metricas_servidores (leida por JDBC).
 
-Ejecutar:
-  spark-submit --master spark://192.168.1.65:7077 \
-               --jars /opt/spark/jars/mysql-connector-j-8.0.33.jar \
-               /opt/spark/jobs/job_sql.py
+Este job es el mejor ejemplo de procesamiento DISTRIBUIDO real: la lectura
+viaja por la red desde MySQL (en el master) hacia los executors de los workers,
+asi que no necesita un sistema de archivos compartido.
+
+Analisis (Spark SQL):
+  - Estadisticas globales (min/max/avg/stddev de las metricas)
+  - Metricas promedio por ambiente
+  - Top servidores con mas errores
+  - Eventos por servicio y nivel
+  - Servidores en estado critico
+
+Ejecutar (recomendado, via submit_jobs.sh):
+  docker exec spark-master-cluster bash /opt/spark/jobs/submit_jobs.sh sql
 """
 
 import os
+import csv as csvmod
 import time
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, count, avg, round as spark_round, desc
 
 SPARK_MASTER   = os.getenv("SPARK_MASTER",   "spark://192.168.1.65:7077")
 MYSQL_HOST     = os.getenv("MYSQL_HOST",     "192.168.1.65")
@@ -26,6 +34,20 @@ JDBC_URL    = f"jdbc:mysql://{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}?useSSL=f
 JDBC_DRIVER = "com.mysql.cj.jdbc.Driver"
 JDBC_JAR    = "/opt/spark/jars/mysql-connector-j-8.0.33.jar"
 
+
+def guardar_csv(df, ruta):
+    """Recolecta en el driver (master) y escribe un unico CSV."""
+    filas = df.collect()
+    columnas = df.columns
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    with open(ruta, "w", newline="") as f:
+        w = csvmod.writer(f)
+        w.writerow(columnas)
+        for r in filas:
+            w.writerow([r[c] for c in columnas])
+    print(f"  -> guardado: {ruta}")
+
+
 spark = SparkSession.builder \
     .appName("Job_SQL_LogsServidores") \
     .master(SPARK_MASTER) \
@@ -34,11 +56,11 @@ spark = SparkSession.builder \
 
 spark.sparkContext.setLogLevel("WARN")
 
-print("\n=== JOB SQL — LOGS DE SERVIDORES ===\n")
-
+print("\n=== JOB SQL - LOGS DE SERVIDORES ===\n")
 inicio = time.time()
 
-# Leer desde MySQL vía JDBC
+# Lectura distribuida desde MySQL via JDBC.
+# partitionColumn + numPartitions reparte la lectura entre los workers.
 df = spark.read \
     .format("jdbc") \
     .option("url", JDBC_URL) \
@@ -49,15 +71,32 @@ df = spark.read \
     .option("fetchsize", "5000") \
     .load()
 
+df.cache()
 total = df.count()
 print(f"Registros cargados: {total:,}")
 
-# Registrar como vista temporal para usar Spark SQL
 df.createOrReplaceTempView("logs")
 
-# Consulta 1: resumen de métricas por ambiente
-print("\n--- Métricas promedio por ambiente ---")
-spark.sql("""
+# 1) Estadisticas globales (min/max/avg/stddev)
+print("\n--- Estadisticas globales de metricas ---")
+estad = spark.sql("""
+    SELECT
+        ROUND(AVG(uso_cpu_porcentaje), 2)    AS cpu_avg,
+        ROUND(MIN(uso_cpu_porcentaje), 2)    AS cpu_min,
+        ROUND(MAX(uso_cpu_porcentaje), 2)    AS cpu_max,
+        ROUND(STDDEV(uso_cpu_porcentaje), 2) AS cpu_stddev,
+        ROUND(AVG(uso_ram_porcentaje), 2)    AS ram_avg,
+        ROUND(AVG(uso_disco_porcentaje), 2)  AS disco_avg,
+        ROUND(AVG(temperatura_cpu), 2)       AS temp_avg,
+        ROUND(AVG(latencia_red_ms), 2)       AS latencia_avg,
+        ROUND(AVG(tiempo_respuesta_ms), 2)   AS respuesta_avg
+    FROM logs
+""")
+estad.show()
+
+# 2) Metricas promedio por ambiente
+print("\n--- Metricas promedio por ambiente ---")
+ambiente = spark.sql("""
     SELECT ambiente,
            COUNT(*)                              AS total,
            ROUND(AVG(uso_cpu_porcentaje),  2)    AS cpu_avg,
@@ -67,11 +106,12 @@ spark.sql("""
     FROM logs
     GROUP BY ambiente
     ORDER BY total DESC
-""").show()
+""")
+ambiente.show()
 
-# Consulta 2: top 10 servidores con más errores
-print("\n--- Top 10 servidores con más errores ---")
-spark.sql("""
+# 3) Top 10 servidores con mas errores
+print("\n--- Top 10 servidores con mas errores ---")
+top_err = spark.sql("""
     SELECT servidor, zona,
            COUNT(*) AS total_errores,
            ROUND(AVG(uso_cpu_porcentaje), 2) AS cpu_avg
@@ -80,34 +120,38 @@ spark.sql("""
     GROUP BY servidor, zona
     ORDER BY total_errores DESC
     LIMIT 10
-""").show()
+""")
+top_err.show()
 
-# Consulta 3: conteo de mensajes por servicio y nivel
+# 4) Eventos por servicio y nivel
 print("\n--- Eventos por servicio y nivel ---")
 spark.sql("""
     SELECT servicio, nivel, COUNT(*) AS total
     FROM logs
     GROUP BY servicio, nivel
     ORDER BY servicio, total DESC
-""").show(30)
+""").show(40)
+
+# 5) Servidores en estado critico (umbrales sobre el promedio)
+print("\n--- Servidores en estado critico ---")
+criticos = spark.sql("""
+    SELECT servidor,
+           COUNT(*) AS eventos,
+           ROUND(AVG(uso_cpu_porcentaje), 2) AS cpu_avg,
+           ROUND(AVG(uso_ram_porcentaje), 2) AS ram_avg,
+           ROUND(AVG(temperatura_cpu), 2)    AS temp_avg
+    FROM logs
+    GROUP BY servidor
+    HAVING cpu_avg > 70 OR ram_avg > 70 OR temp_avg > 75
+    ORDER BY cpu_avg DESC
+""")
+criticos.show()
 
 fin = time.time()
-print(f"\nTiempo total (distribuido): {fin - inicio:.2f} segundos")
-print(f"Registros procesados: {total:,}")
+print(f"\nTiempo total (distribuido): {fin - inicio:.2f} s | Registros: {total:,}")
 
-# Guardar resultado principal
-spark.sql("""
-    SELECT ambiente,
-           COUNT(*)                           AS total,
-           ROUND(AVG(uso_cpu_porcentaje), 2)  AS cpu_avg,
-           ROUND(AVG(uso_ram_porcentaje), 2)  AS ram_avg,
-           ROUND(AVG(tiempo_respuesta_ms), 2) AS respuesta_avg_ms
-    FROM logs
-    GROUP BY ambiente
-""").coalesce(1).write.mode("overwrite") \
-    .option("header", True) \
-    .csv(f"{OUTPUT_DIR}/resultado_sql")
-
-print(f"Resultado guardado en: {OUTPUT_DIR}/resultado_sql")
+guardar_csv(estad,    f"{OUTPUT_DIR}/resultado_sql/estadisticas_globales.csv")
+guardar_csv(ambiente, f"{OUTPUT_DIR}/resultado_sql/por_ambiente.csv")
+guardar_csv(top_err,  f"{OUTPUT_DIR}/resultado_sql/top_servidores_errores.csv")
 
 spark.stop()

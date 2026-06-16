@@ -37,22 +37,26 @@ JAR="/opt/spark/jars/mysql-connector-j-8.0.33.jar"
 DRIVER_HOST="${DRIVER_HOST:-192.168.1.65}"
 COMMON_CONF="--conf spark.driver.host=${DRIVER_HOST} --conf spark.driver.bindAddress=0.0.0.0"
 
+# run <titulo> <archivo.py> <data_path> [jars]
+# Solo el job SQL necesita el conector JDBC; los demas se ejecutan sin --jars.
 run() {
   echo ""
   echo ">>> Ejecutando: $1"
-  DATA_PATH="$3" $SUBMIT --master "$SPARK_MASTER" $COMMON_CONF --jars "$JAR" "$JOBS_DIR/$2"
+  local extra=""
+  [ -n "$4" ] && extra="--jars $4"
+  DATA_PATH="$3" $SUBMIT --master "$SPARK_MASTER" $COMMON_CONF $extra "$JOBS_DIR/$2"
   [ $? -eq 0 ] && echo "    OK: $1" || { echo "    FALLO: $1"; exit 1; }
 }
 
 case "${1:-todos}" in
   json)        run "Job JSON"    "job_json.py"        "$DATA_JSON" ;;
   csv)         run "Job CSV"     "job_csv.py"         "$DATA_CSV"  ;;
-  sql)         run "Job SQL"     "job_sql.py"         ""           ;;
+  sql)         run "Job SQL"     "job_sql.py"         ""           "$JAR" ;;
   comparacion) run "Comparación" "job_comparacion.py" "$DATA_JSON" ;;
   todos)
     run "Job JSON"    "job_json.py"        "$DATA_JSON"
     run "Job CSV"     "job_csv.py"         "$DATA_CSV"
-    run "Job SQL"     "job_sql.py"         ""
+    run "Job SQL"     "job_sql.py"         ""           "$JAR"
     run "Comparación" "job_comparacion.py" "$DATA_JSON"
     ;;
   *) echo "Uso: $0 [json|csv|sql|comparacion|todos]"; exit 1 ;;

@@ -1,101 +1,90 @@
 """
 Job: job_comparacion.py
-Descripción: Corre el mismo procesamiento en modo LOCAL (1 núcleo)
-             y en modo CLÚSTER, imprimiendo los tiempos para comparar.
-             Esto demuestra el beneficio del procesamiento distribuido.
+Compara el MISMO procesamiento ejecutado en:
+  - LOCAL 1 nucleo   (local[1])   -> simula una sola maquina, sin paralelismo
+  - LOCAL n nucleos  (local[*])   -> una sola maquina, todos sus nucleos
+  - DISTRIBUIDO      (cluster)    -> los 3 nodos (master + 2 workers)
+
+Imprime los tiempos y el speedup, y guarda un resumen CSV en el master.
+Demuestra el beneficio del procesamiento distribuido.
 
 Ejecutar:
-  spark-submit --master spark://192.168.1.65:7077 \
-               /opt/spark/jobs/job_comparacion.py
+  docker exec spark-master-cluster bash /opt/spark/jobs/submit_jobs.sh comparacion
 """
 
 import os
+import csv as csvmod
 import time
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, count, avg, round as spark_round, desc
+from pyspark.sql.functions import col, count, avg, stddev, round as rnd, desc
 
 SPARK_MASTER = os.getenv("SPARK_MASTER", "spark://192.168.1.65:7077")
 DATA_PATH    = os.getenv("DATA_PATH",    "/opt/spark/data/raw/eventos.jsonl")
+OUTPUT_DIR   = os.getenv("OUTPUT_DIR",   "/opt/spark/output")
 
 KAFKA_META = ["_kafka_topic", "_kafka_partition", "_kafka_offset", "_kafka_timestamp", "_consumer_ts"]
 
-# ─── Función reutilizable con el mismo procesamiento ──────────
-def procesar(spark, label):
+
+def procesar(spark):
+    """Mismo trabajo en los 3 modos: lectura + 3 agregaciones forzadas."""
     df = spark.read.json(DATA_PATH).drop(*KAFKA_META)
     total = df.count()
 
-    # Agregación 1
     df.groupBy("nivel").agg(count("*").alias("total")).collect()
 
-    # Agregación 2
-    df.groupBy("servidor") \
-      .agg(
-          spark_round(avg("uso_cpu_porcentaje"), 2).alias("cpu_avg"),
-          spark_round(avg("uso_ram_porcentaje"), 2).alias("ram_avg")
-      ).collect()
+    df.groupBy("servidor").agg(
+        rnd(avg("uso_cpu_porcentaje"), 2).alias("cpu_avg"),
+        rnd(stddev("uso_cpu_porcentaje"), 2).alias("cpu_stddev")
+    ).collect()
 
-    # Agregación 3
-    df.groupBy("zona", "tipo_evento") \
-      .agg(count("*").alias("total")) \
-      .orderBy(desc("total")) \
-      .collect()
+    df.groupBy("zona", "tipo_evento").agg(count("*").alias("total")) \
+      .orderBy(desc("total")).collect()
 
     return total
 
-# ──────────────────────────────────────────────────────────────
-# 1. Ejecución LOCAL (simula una sola máquina)
-# ──────────────────────────────────────────────────────────────
-print("\n" + "="*50)
-print("  MODO LOCAL (1 máquina, 1 núcleo)")
-print("="*50)
 
-spark_local = SparkSession.builder \
-    .appName("Comparacion_Local") \
-    .master("local[1]") \
-    .getOrCreate()
-spark_local.sparkContext.setLogLevel("WARN")
+def medir(nombre, master_url):
+    print("\n" + "=" * 50)
+    print(f"  {nombre}")
+    print("=" * 50)
+    spark = SparkSession.builder \
+        .appName(f"Comparacion_{nombre}") \
+        .master(master_url) \
+        .getOrCreate()
+    spark.sparkContext.setLogLevel("WARN")
+    t0 = time.time()
+    total = procesar(spark)
+    elapsed = time.time() - t0
+    spark.stop()
+    print(f"  Registros: {total:,}")
+    print(f"  Tiempo:    {elapsed:.2f} s")
+    return total, elapsed
 
-t0 = time.time()
-total = procesar(spark_local, "local")
-tiempo_local = time.time() - t0
 
-print(f"  Registros: {total:,}")
-print(f"  Tiempo:    {tiempo_local:.2f} segundos")
+total, t_local1 = medir("MODO LOCAL (1 nucleo)",  "local[1]")
+_,     t_localn = medir("MODO LOCAL (n nucleos)", "local[*]")
+_,     t_dist   = medir("MODO DISTRIBUIDO (3 nodos)", SPARK_MASTER)
 
-spark_local.stop()
+speedup_1 = t_local1 / t_dist if t_dist > 0 else 0
+speedup_n = t_localn / t_dist if t_dist > 0 else 0
 
-# ──────────────────────────────────────────────────────────────
-# 2. Ejecución DISTRIBUIDA (3 nodos)
-# ──────────────────────────────────────────────────────────────
-print("\n" + "="*50)
-print("  MODO DISTRIBUIDO (3 nodos)")
-print("="*50)
-
-spark_cluster = SparkSession.builder \
-    .appName("Comparacion_Distribuido") \
-    .master(SPARK_MASTER) \
-    .getOrCreate()
-spark_cluster.sparkContext.setLogLevel("WARN")
-
-t0 = time.time()
-total = procesar(spark_cluster, "cluster")
-tiempo_cluster = time.time() - t0
-
-print(f"  Registros: {total:,}")
-print(f"  Tiempo:    {tiempo_cluster:.2f} segundos")
-
-spark_cluster.stop()
-
-# ──────────────────────────────────────────────────────────────
-# 3. Resultado comparativo
-# ──────────────────────────────────────────────────────────────
-mejora = tiempo_local / tiempo_cluster if tiempo_cluster > 0 else 0
-
-print("\n" + "="*50)
+print("\n" + "=" * 50)
 print("  COMPARATIVA")
-print("="*50)
-print(f"  Local (1 núcleo):   {tiempo_local:.2f}s")
-print(f"  Distribuido:        {tiempo_cluster:.2f}s")
-print(f"  Mejora:             {mejora:.2f}x más rápido")
-print(f"  Registros:          {total:,}")
-print("="*50 + "\n")
+print("=" * 50)
+print(f"  Local 1 nucleo:   {t_local1:.2f} s")
+print(f"  Local n nucleos:  {t_localn:.2f} s")
+print(f"  Distribuido:      {t_dist:.2f} s")
+print(f"  Speedup vs 1 nucleo:  {speedup_1:.2f}x")
+print(f"  Speedup vs n nucleos: {speedup_n:.2f}x")
+print(f"  Registros:        {total:,}")
+print("=" * 50 + "\n")
+
+ruta = f"{OUTPUT_DIR}/resultado_comparacion/comparacion.csv"
+os.makedirs(os.path.dirname(ruta), exist_ok=True)
+with open(ruta, "w", newline="") as f:
+    w = csvmod.writer(f)
+    w.writerow(["modo", "tiempo_segundos", "registros"])
+    w.writerow(["local_1_nucleo",  round(t_local1, 2), total])
+    w.writerow(["local_n_nucleos", round(t_localn, 2), total])
+    w.writerow(["distribuido",     round(t_dist, 2),   total])
+print(f"Resumen guardado en: {ruta}")
