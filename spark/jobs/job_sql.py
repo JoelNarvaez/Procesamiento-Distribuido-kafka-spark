@@ -111,6 +111,105 @@ CONSULTAS = [
             ORDER BY cpu_avg DESC
         """,
     },
+
+    # ---------- Consultas mas complejas ----------
+    {
+        "nombre": "Tasa de error por servicio (%)",
+        "guardar": "tasa_error_por_servicio",
+        "sql": """
+            SELECT servicio,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN nivel IN ('ERROR','CRITICAL') THEN 1 ELSE 0 END) AS errores,
+                   ROUND(100.0 * SUM(CASE WHEN nivel IN ('ERROR','CRITICAL') THEN 1 ELSE 0 END)
+                         / COUNT(*), 2) AS pct_error
+            FROM logs
+            GROUP BY servicio
+            ORDER BY pct_error DESC
+        """,
+    },
+    {
+        "nombre": "Percentiles de tiempo de respuesta por servicio (p50/p90/p95/p99)",
+        "guardar": "percentiles_respuesta",
+        "sql": """
+            SELECT servicio,
+                   COUNT(*) AS total,
+                   ROUND(percentile_approx(tiempo_respuesta_ms, 0.50), 0) AS p50_ms,
+                   ROUND(percentile_approx(tiempo_respuesta_ms, 0.90), 0) AS p90_ms,
+                   ROUND(percentile_approx(tiempo_respuesta_ms, 0.95), 0) AS p95_ms,
+                   ROUND(percentile_approx(tiempo_respuesta_ms, 0.99), 0) AS p99_ms,
+                   MAX(tiempo_respuesta_ms) AS max_ms
+            FROM logs
+            GROUP BY servicio
+            ORDER BY p99_ms DESC
+        """,
+    },
+    {
+        "nombre": "Ranking de servidores por CPU (window RANK)",
+        "guardar": "ranking_servidores_cpu",
+        "sql": """
+            WITH agg AS (
+                SELECT servidor,
+                       COUNT(*) AS eventos,
+                       ROUND(AVG(uso_cpu_porcentaje), 2) AS cpu_avg,
+                       ROUND(AVG(uso_ram_porcentaje), 2) AS ram_avg
+                FROM logs
+                GROUP BY servidor
+            )
+            SELECT servidor, eventos, cpu_avg, ram_avg,
+                   RANK() OVER (ORDER BY cpu_avg DESC) AS ranking_cpu
+            FROM agg
+            ORDER BY ranking_cpu
+        """,
+    },
+    {
+        "nombre": "Servicio mas problematico por zona (window ROW_NUMBER)",
+        "guardar": None,
+        "sql": """
+            SELECT zona, servicio, errores
+            FROM (
+                SELECT zona, servicio,
+                       COUNT(*) AS errores,
+                       ROW_NUMBER() OVER (PARTITION BY zona ORDER BY COUNT(*) DESC) AS rn
+                FROM logs
+                WHERE nivel IN ('ERROR','CRITICAL')
+                GROUP BY zona, servicio
+            )
+            WHERE rn = 1
+            ORDER BY errores DESC
+        """,
+    },
+    {
+        "nombre": "Distribucion de codigos de estado por clase (2xx/3xx/4xx/5xx)",
+        "guardar": None,
+        "sql": """
+            SELECT clase_estado, COUNT(*) AS total
+            FROM (
+                SELECT CASE
+                         WHEN codigo_estado BETWEEN 200 AND 299 THEN '2xx OK'
+                         WHEN codigo_estado BETWEEN 300 AND 399 THEN '3xx Redireccion'
+                         WHEN codigo_estado BETWEEN 400 AND 499 THEN '4xx Cliente'
+                         WHEN codigo_estado BETWEEN 500 AND 599 THEN '5xx Servidor'
+                         ELSE 'Otro'
+                       END AS clase_estado
+                FROM logs
+            )
+            GROUP BY clase_estado
+            ORDER BY total DESC
+        """,
+    },
+    {
+        "nombre": "Throughput por hora (eventos y respuesta promedio)",
+        "guardar": None,
+        "sql": """
+            SELECT HOUR(timestamp_evento) AS hora,
+                   COUNT(*) AS eventos,
+                   ROUND(AVG(tiempo_respuesta_ms), 2) AS resp_avg_ms,
+                   SUM(CASE WHEN nivel IN ('ERROR','CRITICAL') THEN 1 ELSE 0 END) AS errores
+            FROM logs
+            GROUP BY HOUR(timestamp_evento)
+            ORDER BY hora
+        """,
+    },
 ]
 # ============================================================
 
@@ -139,15 +238,25 @@ spark.sparkContext.setLogLevel("WARN")
 print("\n=== JOB SQL — LOGS DE SERVIDORES (distribuido) ===\n")
 inicio = time.time()
 
+# Lectura DISTRIBUIDA: particionamos por CRC32(id_log) (numero uniforme 0..2^32)
+# para que Spark abra varias consultas en paralelo y reparta la carga entre los
+# 2 workers. Sin esto, JDBC lee todo en UNA sola particion (un solo executor).
+NUM_PARTICIONES = os.getenv("JDBC_NUM_PARTITIONS", "8")
+
 df = spark.read \
     .format("jdbc") \
     .option("url", JDBC_URL) \
-    .option("dbtable", "logs_metricas_servidores") \
+    .option("dbtable", "(SELECT *, CRC32(id_log) AS pcol FROM logs_metricas_servidores) AS sub") \
     .option("user", MYSQL_USER) \
     .option("password", MYSQL_PASSWORD) \
     .option("driver", JDBC_DRIVER) \
+    .option("partitionColumn", "pcol") \
+    .option("lowerBound", "0") \
+    .option("upperBound", "4294967295") \
+    .option("numPartitions", NUM_PARTICIONES) \
     .option("fetchsize", "5000") \
-    .load()
+    .load() \
+    .drop("pcol")
 
 df.cache()
 total = df.count()

@@ -1,23 +1,5 @@
 #!/bin/bash
-# =============================================================
-#  sync_datos.sh
-#  Copia los archivos de datos (eventos.jsonl / eventos.csv) desde el
-#  MASTER hacia los 2 WORKERS, en la MISMA ruta del repositorio.
-#
-#  Por que: en los jobs de archivos (job_json / job_csv / comparacion)
-#  Spark reparte la lectura entre los executors de los workers. Cada
-#  executor lee el archivo desde el disco LOCAL de su nodo, por lo que
-#  el archivo debe existir en los 3 nodos en la misma ruta.
-#  (El job SQL NO necesita esto: lee por red desde MySQL.)
-#
-#  Requisitos:
-#    - El repo clonado en la MISMA ruta absoluta en los 3 nodos.
-#    - Acceso SSH del master a los workers (idealmente con llave).
-#
-#  Uso:
-#    bash scripts/sync_datos.sh
-#    SSH_USER=joel bash scripts/sync_datos.sh
-# =============================================================
+
 set -e
 
 WORKERS=("100.126.190.35" "100.87.252.100")

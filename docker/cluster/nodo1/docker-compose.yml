@@ -49,16 +49,13 @@ services:
       - ../../../spark/eventlog:/opt/spark/eventlog
       - ../../../spark/jars/mysql-connector-j-8.0.33.jar:/opt/spark/jars/mysql-connector-j-8.0.33.jar
 
-  # Spark History Server: lee los logs de eventos que escriben los jobs y los
-  # sirve de forma permanente en http://100.124.245.95:18080 (para revisar la
-  # separacion de tareas de cualquier job ya terminado).
   spark-history:
     image: apache/spark:latest
     container_name: spark-history-cluster
-    hostname: spark-history
     network_mode: host
     user: root
     environment:
+      SPARK_LOCAL_IP: 100.124.245.95
       SPARK_NO_DAEMONIZE: "true"
       SPARK_HISTORY_OPTS: "-Dspark.history.fs.logDirectory=/opt/spark/eventlog -Dspark.history.ui.port=18080"
     command: ["/opt/spark/sbin/start-history-server.sh"]

@@ -13,6 +13,15 @@ async function runProducer({ clientId, topic, tipoEvento }) {
   const producer = kafka.producer();
 
   let mensajesEnviados = 0;
+  let corriendo = true;
+
+  const detener = (sig) => {
+    if (!corriendo) return;
+    console.log(`\n[${clientId}] Señal ${sig} recibida. Deteniendo productor...`);
+    corriendo = false;
+  };
+  process.on("SIGINT", () => detener("SIGINT"));
+  process.on("SIGTERM", () => detener("SIGTERM"));
 
   try {
     await producer.connect();
@@ -24,7 +33,7 @@ async function runProducer({ clientId, topic, tipoEvento }) {
     console.log(" Modo: generación continua");
     console.log("=========================================");
 
-    while (true) {
+    while (corriendo) {
       const evento = generarEvento(tipoEvento);
 
       await producer.send({
@@ -54,6 +63,9 @@ async function runProducer({ clientId, topic, tipoEvento }) {
     process.exitCode = 1;
   } finally {
     await producer.disconnect();
+    console.log("=========================================");
+    console.log(` ${clientId} -> TOTAL DE EVENTOS PRODUCIDOS: ${mensajesEnviados}`);
+    console.log("=========================================");
   }
 }
 

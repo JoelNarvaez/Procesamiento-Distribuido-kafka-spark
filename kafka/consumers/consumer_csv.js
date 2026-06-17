@@ -91,7 +91,10 @@ async function runConsumerCsv() {
       await consumer.disconnect();
 
       stream.end(() => {
-        console.log(`[${timestamp()}] Consumer CSV detenido. Total escritos: ${totalEscritos}`);
+        console.log("==========================================");
+        console.log(`[${timestamp()}] Consumer CSV detenido.`);
+        console.log(` TOTAL DE EVENTOS CONSUMIDOS (CSV): ${totalEscritos}`);
+        console.log("==========================================");
         process.exit(0);
       });
     } catch (error) {
@@ -148,7 +151,9 @@ async function runConsumerCsv() {
 
           totalEscritos++;
 
-          console.log(`ID recibido: ${evento.id_log}`);
+          if (totalEscritos % 1000 === 0) {
+            console.log(`[${timestamp()}] Eventos consumidos (CSV): ${totalEscritos}`);
+          }
         } catch (error) {
           console.error(`[${timestamp()}] Error procesando mensaje:`, error.message);
         }

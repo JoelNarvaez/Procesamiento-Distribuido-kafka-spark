@@ -1,15 +1,5 @@
 #!/bin/bash
-# =============================================================
-#  nfs_worker.sh  (ejecutar en CADA WORKER, nodos 2 y 3)
-#  Monta la carpeta data/ del master (por NFS, vía Tailscale) sobre la
-#  carpeta data/ del repo local, para que el docker-compose la vea sin
-#  cambios (el volumen relativo ../../../data sigue apuntando ahí).
-#
-#  Solo aplica a los jobs de ARCHIVO (json / csv).
-#
-#  Uso:
-#    MASTER_IP=100.124.245.95 MASTER_EXPORT=/ruta/del/master/data bash scripts/nfs_worker.sh
-# =============================================================
+
 set -e
 
 MASTER_IP="${MASTER_IP:-100.124.245.95}"

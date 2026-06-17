@@ -27,12 +27,6 @@ services:
     volumes:
       - kafka_data:/var/lib/kafka/data
 
-  # Spark Worker 2.
-  # network_mode: host -> el worker se enlaza directamente a la IP de Tailscale
-  # (100.87.252.100, interfaz tailscale0) y abre los puertos aleatorios de los
-  # executors sobre la VPN, de modo que el driver puede comunicarse de regreso.
-  # Esto SOLO funciona en Linux; por eso este nodo corre en una VM Ubuntu con
-  # Tailscale instalado DENTRO de la VM.
   spark-worker:
     image: apache/spark:latest
     container_name: spark-worker-2-cluster

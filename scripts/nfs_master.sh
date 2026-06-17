@@ -1,14 +1,5 @@
 #!/bin/bash
-# =============================================================
-#  nfs_master.sh  (ejecutar SOLO en el MASTER, nodo 1)
-#  Exporta la carpeta data/ del repo por NFS hacia la red Tailscale,
-#  para que los workers lean los mismos eventos.jsonl / eventos.csv.
-#
-#  Solo aplica a los jobs de ARCHIVO (json / csv). El job SQL no lo usa.
-#
-#  Uso:
-#    bash scripts/nfs_master.sh
-# =============================================================
+
 set -e
 
 # Rango CGNAT de Tailscale (todas las IPs 100.x del tailnet).

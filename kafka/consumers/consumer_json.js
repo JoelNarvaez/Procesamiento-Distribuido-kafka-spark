@@ -59,7 +59,10 @@ async function runConsumerJson() {
       await consumer.disconnect();
 
       stream.end(() => {
-        console.log(`[${timestamp()}] Consumer JSON detenido. Total escritos: ${totalEscritos}`);
+        console.log("==========================================");
+        console.log(`[${timestamp()}] Consumer JSON detenido.`);
+        console.log(` TOTAL DE EVENTOS CONSUMIDOS (JSON): ${totalEscritos}`);
+        console.log("==========================================");
         process.exit(0);
       });
     } catch (error) {
@@ -115,7 +118,9 @@ async function runConsumerJson() {
 
           totalEscritos++;
 
-          console.log(`ID recibido: ${evento.id_log}`);
+          if (totalEscritos % 1000 === 0) {
+            console.log(`[${timestamp()}] Eventos consumidos (JSON): ${totalEscritos}`);
+          }
         } catch (error) {
           console.error(`[${timestamp()}] Error procesando mensaje:`, error.message);
         }

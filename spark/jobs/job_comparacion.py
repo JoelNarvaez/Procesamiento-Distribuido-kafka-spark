@@ -34,16 +34,26 @@ JDBC_DRIVER = "com.mysql.cj.jdbc.Driver"
 JDBC_JAR    = "/opt/spark/jars/mysql-connector-j-8.0.33.jar"
 
 
+# Particionamos por CRC32(id_log) para que la lectura se reparta entre nodos
+# (en modo distribuido). Sin esto, JDBC leeria todo en una sola particion.
+NUM_PARTICIONES = os.getenv("JDBC_NUM_PARTITIONS", "8")
+
+
 def leer_mysql(spark):
     return spark.read \
         .format("jdbc") \
         .option("url", JDBC_URL) \
-        .option("dbtable", "logs_metricas_servidores") \
+        .option("dbtable", "(SELECT *, CRC32(id_log) AS pcol FROM logs_metricas_servidores) AS sub") \
         .option("user", MYSQL_USER) \
         .option("password", MYSQL_PASSWORD) \
         .option("driver", JDBC_DRIVER) \
+        .option("partitionColumn", "pcol") \
+        .option("lowerBound", "0") \
+        .option("upperBound", "4294967295") \
+        .option("numPartitions", NUM_PARTICIONES) \
         .option("fetchsize", "5000") \
-        .load()
+        .load() \
+        .drop("pcol")
 
 
 def procesar(spark):
