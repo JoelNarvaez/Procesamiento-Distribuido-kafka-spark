@@ -234,6 +234,24 @@ function randomDecimal(min, max) {
   return Number(faker.number.float({ min, max, fractionDigits: 2 }).toFixed(2));
 }
 
+function aplicarVariacion(valor, cap = Infinity) {
+  if (Math.random() < 0.18) {
+    valor *= Math.random() < 0.5
+      ? randomDecimal(0.25, 0.7)   // caída
+      : randomDecimal(1.4, 2.4);   // pico
+  }
+  valor *= 1 + (Math.random() - 0.5) * 0.3;
+  return Math.max(0, Math.min(cap, valor));
+}
+
+function varInt(min, max, cap = Infinity) {
+  return Math.round(aplicarVariacion(randomInt(min, max), cap));
+}
+
+function varDecimal(min, max, cap = Infinity) {
+  return Number(aplicarVariacion(randomDecimal(min, max), cap).toFixed(2));
+}
+
 function generarId() {
   return crypto.randomUUID();
 }
@@ -274,68 +292,68 @@ function generarCodigoEstado(nivel, tipoEvento) {
 function generarMetricasPorNivel(nivel) {
   if (nivel === "CRITICAL") {
     return {
-      tiempo_respuesta_ms: randomInt(1500, 6000),
-      uso_cpu_porcentaje: randomDecimal(88, 99.5),
-      uso_ram_porcentaje: randomDecimal(86, 99.5),
-      uso_disco_porcentaje: randomDecimal(82, 99),
-      bytes_entrada: randomInt(250000, 1500000),
-      bytes_salida: randomInt(400000, 2500000),
-      peticiones_por_minuto: randomInt(2500, 7000),
-      conexiones_activas: randomInt(900, 3000),
-      errores_minuto: randomInt(25, 120),
-      latencia_red_ms: randomInt(300, 1500),
-      temperatura_cpu: randomDecimal(82, 105),
-      paquetes_perdidos: randomInt(50, 500)
+      tiempo_respuesta_ms: varInt(1500, 6000),
+      uso_cpu_porcentaje: varDecimal(82, 99.5, 100),
+      uso_ram_porcentaje: varDecimal(80, 99.5, 100),
+      uso_disco_porcentaje: varDecimal(78, 99, 100),
+      bytes_entrada: varInt(250000, 1500000),
+      bytes_salida: varInt(400000, 2500000),
+      peticiones_por_minuto: varInt(2500, 7000),
+      conexiones_activas: varInt(900, 3000),
+      errores_minuto: varInt(25, 120),
+      latencia_red_ms: varInt(300, 1500),
+      temperatura_cpu: varDecimal(82, 105, 115),
+      paquetes_perdidos: varInt(50, 500)
     };
   }
 
   if (nivel === "ERROR") {
     return {
-      tiempo_respuesta_ms: randomInt(700, 3000),
-      uso_cpu_porcentaje: randomDecimal(60, 92),
-      uso_ram_porcentaje: randomDecimal(58, 94),
-      uso_disco_porcentaje: randomDecimal(50, 90),
-      bytes_entrada: randomInt(100000, 900000),
-      bytes_salida: randomInt(150000, 1500000),
-      peticiones_por_minuto: randomInt(1200, 4000),
-      conexiones_activas: randomInt(400, 1600),
-      errores_minuto: randomInt(8, 50),
-      latencia_red_ms: randomInt(120, 700),
-      temperatura_cpu: randomDecimal(65, 92),
-      paquetes_perdidos: randomInt(10, 150)
+      tiempo_respuesta_ms: varInt(700, 3000),
+      uso_cpu_porcentaje: varDecimal(55, 92, 100),
+      uso_ram_porcentaje: varDecimal(52, 94, 100),
+      uso_disco_porcentaje: varDecimal(45, 90, 100),
+      bytes_entrada: varInt(100000, 900000),
+      bytes_salida: varInt(150000, 1500000),
+      peticiones_por_minuto: varInt(1200, 4000),
+      conexiones_activas: varInt(400, 1600),
+      errores_minuto: varInt(8, 50),
+      latencia_red_ms: varInt(120, 700),
+      temperatura_cpu: varDecimal(62, 92, 115),
+      paquetes_perdidos: varInt(10, 150)
     };
   }
 
   if (nivel === "WARNING") {
     return {
-      tiempo_respuesta_ms: randomInt(300, 1200),
-      uso_cpu_porcentaje: randomDecimal(45, 82),
-      uso_ram_porcentaje: randomDecimal(42, 86),
-      uso_disco_porcentaje: randomDecimal(40, 88),
-      bytes_entrada: randomInt(50000, 500000),
-      bytes_salida: randomInt(70000, 900000),
-      peticiones_por_minuto: randomInt(600, 2500),
-      conexiones_activas: randomInt(200, 1000),
-      errores_minuto: randomInt(1, 12),
-      latencia_red_ms: randomInt(70, 300),
-      temperatura_cpu: randomDecimal(55, 80),
-      paquetes_perdidos: randomInt(1, 40)
+      tiempo_respuesta_ms: varInt(300, 1200),
+      uso_cpu_porcentaje: varDecimal(40, 82, 100),
+      uso_ram_porcentaje: varDecimal(38, 86, 100),
+      uso_disco_porcentaje: varDecimal(35, 88, 100),
+      bytes_entrada: varInt(50000, 500000),
+      bytes_salida: varInt(70000, 900000),
+      peticiones_por_minuto: varInt(600, 2500),
+      conexiones_activas: varInt(200, 1000),
+      errores_minuto: varInt(1, 12),
+      latencia_red_ms: varInt(70, 300),
+      temperatura_cpu: varDecimal(52, 80, 115),
+      paquetes_perdidos: varInt(1, 40)
     };
   }
 
   return {
-    tiempo_respuesta_ms: randomInt(20, 350),
-    uso_cpu_porcentaje: randomDecimal(5, 55),
-    uso_ram_porcentaje: randomDecimal(10, 65),
-    uso_disco_porcentaje: randomDecimal(15, 70),
-    bytes_entrada: randomInt(500, 150000),
-    bytes_salida: randomInt(500, 250000),
-    peticiones_por_minuto: randomInt(10, 900),
-    conexiones_activas: randomInt(1, 350),
-    errores_minuto: randomInt(0, 3),
-    latencia_red_ms: randomInt(1, 90),
-    temperatura_cpu: randomDecimal(35, 65),
-    paquetes_perdidos: randomInt(0, 5)
+    tiempo_respuesta_ms: varInt(20, 350),
+    uso_cpu_porcentaje: varDecimal(3, 55, 100),
+    uso_ram_porcentaje: varDecimal(8, 65, 100),
+    uso_disco_porcentaje: varDecimal(12, 70, 100),
+    bytes_entrada: varInt(500, 150000),
+    bytes_salida: varInt(500, 250000),
+    peticiones_por_minuto: varInt(10, 900),
+    conexiones_activas: varInt(1, 350),
+    errores_minuto: varInt(0, 3),
+    latencia_red_ms: varInt(1, 90),
+    temperatura_cpu: varDecimal(32, 65, 115),
+    paquetes_perdidos: varInt(0, 5)
   };
 }
 

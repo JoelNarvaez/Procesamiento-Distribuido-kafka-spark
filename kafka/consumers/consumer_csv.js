@@ -78,6 +78,7 @@ async function runConsumerCsv() {
   }
 
   let totalEscritos = 0;
+  const idsConsumidos = [];
   let cerrando = false;
 
   const shutdown = async (signal) => {
@@ -94,6 +95,9 @@ async function runConsumerCsv() {
         console.log("==========================================");
         console.log(`[${timestamp()}] Consumer CSV detenido.`);
         console.log(` TOTAL DE EVENTOS CONSUMIDOS (CSV): ${totalEscritos}`);
+        console.log("==========================================");
+        console.log(" IDs consumidos (id_log):");
+        idsConsumidos.forEach((id) => console.log(`  ${id}`));
         console.log("==========================================");
         process.exit(0);
       });
@@ -150,6 +154,7 @@ async function runConsumerCsv() {
           }
 
           totalEscritos++;
+          idsConsumidos.push(registro.id_log);
 
           if (totalEscritos % 1000 === 0) {
             console.log(`[${timestamp()}] Eventos consumidos (CSV): ${totalEscritos}`);

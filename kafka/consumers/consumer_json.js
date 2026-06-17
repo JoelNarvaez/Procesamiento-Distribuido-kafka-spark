@@ -46,6 +46,7 @@ async function runConsumerJson() {
   const stream = fs.createWriteStream(OUTPUT_FILE, { flags: "a" });
 
   let totalEscritos = 0;
+  const idsConsumidos = [];
   let cerrando = false;
 
   const shutdown = async (signal) => {
@@ -62,6 +63,9 @@ async function runConsumerJson() {
         console.log("==========================================");
         console.log(`[${timestamp()}] Consumer JSON detenido.`);
         console.log(` TOTAL DE EVENTOS CONSUMIDOS (JSON): ${totalEscritos}`);
+        console.log("==========================================");
+        console.log(" IDs consumidos (id_log):");
+        idsConsumidos.forEach((id) => console.log(`  ${id}`));
         console.log("==========================================");
         process.exit(0);
       });
@@ -117,6 +121,7 @@ async function runConsumerJson() {
           }
 
           totalEscritos++;
+          idsConsumidos.push(registro.id_log);
 
           if (totalEscritos % 1000 === 0) {
             console.log(`[${timestamp()}] Eventos consumidos (JSON): ${totalEscritos}`);
